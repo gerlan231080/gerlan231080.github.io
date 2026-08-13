@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Mon arbre généalogique – V7.3.7</title>
+<title>Mon arbre généalogique – V7.3.8</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 :root{
@@ -134,17 +134,23 @@ label{font-size:12px;font-weight:700;color:#665d56}
 .pedigreeCanvas .personCard{z-index:2}
 .pedigreeCanvas .unionLine,.pedigreeCanvas .descentLine{fill:none;stroke:#9e816b;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 .pedigreeCanvas .unionDot{fill:#9e816b}
+body.manualMoveMode .pedigreeCanvas .personCard{cursor:grab!important;touch-action:none}
+body.manualMoveMode .pedigreeCanvas .personCard.manualDragging{cursor:grabbing!important;z-index:10!important;box-shadow:0 8px 22px rgba(70,45,25,.18)}
+#btnMovePeople.active{background:#8b6b52;color:#fff;border-color:#8b6b52}
 
 </style>
 <!-- MOTEUR_LAYOUT: V736_TESTE_BECKER_DEMEUSE -->
+<!-- V7.3.8 : déplacement horizontal manuel isolé, moteur familial inchangé -->
 </head>
 <body>
 
 <header>
-  <h1>🌳 Mon arbre généalogique <small style="font-weight:500;color:#756b63">V7.3.7</small></h1>
+  <h1>🌳 Mon arbre généalogique <small style="font-weight:500;color:#756b63">V7.3.8</small></h1>
   <button class="primary" id="btnNew">+ Personne</button><button id="btnChildrenBatchTop">👨‍👩‍👧‍👦 Plusieurs enfants</button>
   <button id="btnPrintVisible">🖨️ Imprimer la branche</button>
   <button id="btnPrintFull">🖨️ Imprimer l’arbre complet</button><button id="btnCheckTree">✓ Vérifier les liens</button>
+  <button id="btnMovePeople">↔ Déplacer</button>
+  <button id="btnResetPositions">Réinitialiser positions</button>
   <button id="btnExport">Exporter</button>
   <label class="fileBtn" for="fileImport">Importer</label><input type="file" id="fileImport" accept=".json,application/json">
 </header>
@@ -294,8 +300,9 @@ let currentUser=null,syncing=false,saveTimer=null,editingId=null,relationMode=nu
 let collapsed=new Set();
 let viewScale=1,panX=20,panY=20,isPanning=false,startPan=null;
 let printRestoreCollapsed=null;
+let manualMoveMode=false,currentPedigreeLayout=null,manualDrag=null,manualDragMoved=false;
 
-function emptyData(){return {people:{},parentLinks:[],unions:[],selectedId:null};}
+function emptyData(){return {people:{},parentLinks:[],unions:[],selectedId:null,manualX:{}};}
 
 function parseYear(s){
   const m=String(s||'').match(/(\d{4})$/);
@@ -389,6 +396,11 @@ function normalizeData(d){
   d=repairGenealogyData(d||emptyData()); d.people=d.people||{}; d.parentLinks=Array.isArray(d.parentLinks)?d.parentLinks:[]; d.unions=Array.isArray(d.unions)?d.unions:[]; 
   Object.values(d.people).forEach(p=>{ if(p.photo===undefined)p.photo=''; if(p.notes===undefined)p.notes=''; });
   d.unions.forEach(u=>{ if(!u.type)u.type='Parents / autre'; if(u.startDate===undefined)u.startDate=''; if(u.endDate===undefined)u.endDate=''; });
+  if(!d.manualX || typeof d.manualX!=='object' || Array.isArray(d.manualX))d.manualX={};
+  Object.keys(d.manualX).forEach(id=>{
+    if(!d.people[id] || !Number.isFinite(Number(d.manualX[id])))delete d.manualX[id];
+    else d.manualX[id]=Number(d.manualX[id]);
+  });
   return d;
 }
 let store;
@@ -1109,8 +1121,29 @@ function buildPedigreeLayout(startId){
     });
   });
 
+  // Déplacements manuels : couche indépendante au-dessus du moteur automatique.
+  // On mémorise l'X automatique pour pouvoir enregistrer uniquement un décalage.
+  const autoX={};
+  ids.forEach(id=>{
+    if(!pos[id])return;
+    autoX[id]=pos[id].x;
+    const dx=Number(data.manualX?.[id]||0);
+    pos[id].x+=dx;
+  });
+
+  // Si une carte a été déplacée vers la gauche, translate tout le canevas
+  // sans modifier les décalages enregistrés.
+  const minCardX=Math.min(PED_LEFT,...ids.filter(id=>pos[id]).map(id=>pos[id].x));
+  if(minCardX<PED_LEFT){
+    const s=PED_LEFT-minCardX;
+    ids.forEach(id=>{if(pos[id]){pos[id].x+=s;autoX[id]+=s;}});
+  }
+
+  const finalRight=Math.max(1000,...ids.filter(id=>pos[id]).map(id=>pos[id].x+PED_CARD_W));
+  canvasW=Math.max(canvasW,finalRight+PED_LEFT);
+
   const canvasH=PED_TOP+gens.length*PED_ROW_STEP+90;
-  return {ids,gen,gens,levels,pos,canvasW,canvasH,unitOf,unitsByGen};
+  return {ids,gen,gens,levels,pos,autoX,canvasW,canvasH,unitOf,unitsByGen};
 }
 function pedigreeFamilySets(layout){
   const allowed=new Set(layout.ids),families=new Map();
@@ -1123,8 +1156,94 @@ function pedigreeFamilySets(layout){
   });
   return [...families.values()];
 }
+function persistManualPositions(){
+  const t=store.trees[store.activeTreeId];
+  t.data=data;
+  t.savedAt=Date.now();
+  lastLocalChangeAt=t.savedAt;
+  persistLocal();
+  if(currentUser){
+    clearTimeout(saveTimer);
+    saveTimer=setTimeout(pushAllTrees,500);
+  }
+}
+
+function setManualMoveMode(on){
+  manualMoveMode=!!on;
+  document.body.classList.toggle('manualMoveMode',manualMoveMode);
+  const b=$('btnMovePeople');
+  if(b){
+    b.classList.toggle('active',manualMoveMode);
+    b.textContent=manualMoveMode?'✓ Déplacement actif':'↔ Déplacer';
+  }
+}
+
+function bindManualCardDragging(){
+  document.querySelectorAll('#pedigreeCanvas .personCard').forEach(el=>{
+    el.addEventListener('pointerdown',e=>{
+      if(!manualMoveMode || e.target.closest('.branchToggle'))return;
+      e.preventDefault();
+      e.stopPropagation();
+
+      const id=el.dataset.id;
+      if(!id || !currentPedigreeLayout?.pos[id])return;
+
+      manualDragMoved=false;
+      manualDrag={
+        id,
+        pointerId:e.pointerId,
+        startClientX:e.clientX,
+        startX:currentPedigreeLayout.pos[id].x,
+        baseAutoX:currentPedigreeLayout.autoX?.[id] ?? (currentPedigreeLayout.pos[id].x-Number(data.manualX?.[id]||0))
+      };
+
+      el.classList.add('manualDragging');
+      el.setPointerCapture(e.pointerId);
+    });
+
+    el.addEventListener('pointermove',e=>{
+      if(!manualDrag || manualDrag.id!==el.dataset.id || manualDrag.pointerId!==e.pointerId)return;
+      e.preventDefault();
+      e.stopPropagation();
+
+      const dx=(e.clientX-manualDrag.startClientX)/viewScale;
+      if(Math.abs(dx)>3)manualDragMoved=true;
+
+      const newX=Math.max(PED_LEFT,manualDrag.startX+dx);
+      currentPedigreeLayout.pos[manualDrag.id].x=newX;
+      el.style.left=newX+'px';
+
+      // Les lignes suivent immédiatement la carte.
+      drawPedigreeLines(currentPedigreeLayout);
+    });
+
+    const endDrag=e=>{
+      if(!manualDrag || manualDrag.id!==el.dataset.id)return;
+      e.preventDefault();
+      e.stopPropagation();
+
+      const id=manualDrag.id;
+      const newX=currentPedigreeLayout.pos[id].x;
+      data.manualX=data.manualX||{};
+      data.manualX[id]=Math.round((newX-manualDrag.baseAutoX)*10)/10;
+
+      // Un décalage quasi nul redevient automatique.
+      if(Math.abs(data.manualX[id])<1)delete data.manualX[id];
+
+      el.classList.remove('manualDragging');
+      manualDrag=null;
+      persistManualPositions();
+      drawPedigreeLines(currentPedigreeLayout);
+    };
+
+    el.addEventListener('pointerup',endDrag);
+    el.addEventListener('pointercancel',endDrag);
+  });
+}
+
 function renderPedigree(startId){
   const layout=buildPedigreeLayout(startId),tree=$('tree');
+  currentPedigreeLayout=layout;
   const marks=layout.gens.map((g,i)=>{
     const label=g<0?`Génération ${Math.abs(g)} au-dessus`:g===0?'Génération sélectionnée':`Génération ${g} en dessous`;
     return `<div class="generationMark" style="top:${PED_TOP+i*PED_ROW_STEP-24}px">${esc(label)}</div>`;
@@ -1135,8 +1254,13 @@ function renderPedigree(startId){
     const wrap=cardEl.parentElement;cardEl.style.left=wrap.style.left;cardEl.style.top=wrap.style.top;
     wrap.parentElement.insertBefore(cardEl,wrap);wrap.remove();
   });
-  tree.querySelectorAll('.personCard').forEach(el=>el.onclick=e=>{if(e.target.closest('.branchToggle'))return;data.selectedId=el.dataset.id;render();openPerson(el.dataset.id);});
+  tree.querySelectorAll('.personCard').forEach(el=>el.onclick=e=>{
+    if(e.target.closest('.branchToggle'))return;
+    if(manualMoveMode || manualDragMoved){manualDragMoved=false;return;}
+    data.selectedId=el.dataset.id;render();openPerson(el.dataset.id);
+  });
   tree.querySelectorAll('.branchToggle').forEach(b=>b.onclick=e=>{e.stopPropagation();const id=b.dataset.toggle;if(collapsed.has(id))collapsed.delete(id);else collapsed.add(id);render();});
+  bindManualCardDragging();
   drawPedigreeLines(layout);
   requestAnimationFrame(()=>requestAnimationFrame(fitGraphToViewport));
 }
@@ -1678,6 +1802,7 @@ $('btnDelete').onclick=async()=>{
 
   // Suppression locale complète.
   delete data.people[idToDelete];
+  if(data.manualX)delete data.manualX[idToDelete];
   data.parentLinks=data.parentLinks.filter(x=>x.parent!==idToDelete&&x.child!==idToDelete);
   data.unions=data.unions.filter(u=>u.a!==idToDelete&&u.b!==idToDelete);
   collapsed.delete(idToDelete);
@@ -1710,6 +1835,15 @@ $('search').oninput=renderList;
 $('btnRelationship').onclick=()=>{$('relationshipResult').textContent=relationLabel($('relA').value,$('relB').value);};
 $('zoomIn').onclick=()=>setZoom(viewScale+.15);$('zoomOut').onclick=()=>setZoom(viewScale-.15);$('zoomReset').onclick=fitGraphToViewport;$('centerSelected').onclick=()=>centerOnPerson(data.selectedId);
 $('btnPrintVisible').onclick=()=>printTree(false);$('btnPrintFull').onclick=()=>printTree(true);$('btnCheckTree').onclick=checkTreeIntegrity;
+$('btnMovePeople').onclick=()=>setManualMoveMode(!manualMoveMode);
+$('btnResetPositions').onclick=()=>{
+  const count=Object.keys(data.manualX||{}).length;
+  if(!count){alert('Aucune position manuelle à réinitialiser.');return;}
+  if(!confirm('Réinitialiser toutes les positions manuelles de cet arbre ?'))return;
+  data.manualX={};
+  persistManualPositions();
+  render();
+};
 
 $('btnExport').onclick=()=>{const blob=new Blob([JSON.stringify({treeName:treeName(),data:data},null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=treeName().replace(/[^a-z0-9_-]+/gi,'-')+'.json';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);};
 $('fileImport').onchange=function(){const f=this.files?.[0];if(!f)return;const r=new FileReader();r.onload=()=>{try{const o=JSON.parse(r.result),d=normalizeData(o.data&&o.data.people?o.data:o);if(!d.people||!Array.isArray(d.parentLinks)||!Array.isArray(d.unions))throw 0;data=d;store.trees[store.activeTreeId].data=data;if(o.treeName)store.trees[store.activeTreeId].name=o.treeName;save();}catch(e){alert('Fichier non valide.');}};r.readAsText(f);this.value='';};
