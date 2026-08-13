@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Mon arbre généalogique – V7.3.2</title>
+<title>Mon arbre généalogique – V7.3.4</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 :root{
@@ -136,12 +136,12 @@ label{font-size:12px;font-weight:700;color:#665d56}
 .pedigreeCanvas .unionDot{fill:#9e816b}
 
 </style>
-<!-- MOTEUR_LAYOUT: TOP_DOWN_STABLE_V732 -->
+<!-- MOTEUR_LAYOUT: ROOT_AWARE_V734 -->
 </head>
 <body>
 
 <header>
-  <h1>🌳 Mon arbre généalogique <small style="font-weight:500;color:#756b63">V7.3.2</small></h1>
+  <h1>🌳 Mon arbre généalogique <small style="font-weight:500;color:#756b63">V7.3.4</small></h1>
   <button class="primary" id="btnNew">+ Personne</button><button id="btnChildrenBatchTop">👨‍👩‍👧‍👦 Plusieurs enfants</button>
   <button id="btnPrintVisible">🖨️ Imprimer la branche</button>
   <button id="btnPrintFull">🖨️ Imprimer l’arbre complet</button><button id="btnCheckTree">✓ Vérifier les liens</button>
@@ -875,10 +875,10 @@ function buildPedigreeLayout(startId){
 
   const unitsByGen={},unitOf={};
 
-  // Un couple reste toujours un bloc indivisible.
+  // 1. Un couple est toujours un bloc indivisible.
   gens.forEach(g=>{
-    const idsHere=levels[g]||[],setHere=new Set(idsHere),adj={};
-    idsHere.forEach(id=>adj[id]=new Set());
+    const here=levels[g]||[], setHere=new Set(here), adj={};
+    here.forEach(id=>adj[id]=new Set());
 
     data.unions.forEach(u=>{
       if(setHere.has(u.a)&&setHere.has(u.b)&&gen[u.a]===g&&gen[u.b]===g){
@@ -887,7 +887,7 @@ function buildPedigreeLayout(startId){
     });
 
     const seen=new Set(),units=[];
-    idsHere.forEach(id=>{
+    here.forEach(id=>{
       if(seen.has(id))return;
       const q=[id],members=[];seen.add(id);
       while(q.length){
@@ -895,20 +895,21 @@ function buildPedigreeLayout(startId){
         [...adj[x]].forEach(n=>{if(!seen.has(n)){seen.add(n);q.push(n);}});
       }
       if(members.length===2){
-        const a=data.people[members[0]],b=data.people[members[1]];
-        if(a?.gender==='female'&&b?.gender==='male')members.reverse();
+        const A=data.people[members[0]],B=data.people[members[1]];
+        if(A?.gender==='female'&&B?.gender==='male')members.reverse();
       }
       const u={
         id:`U${g}_${units.length}`,g,members,
         width:members.length*PED_CARD_W+Math.max(0,members.length-1)*PED_INNER_GAP,
         preds:new Set(),succs:new Set(),seed:units.length,x:0
       };
-      units.push(u);members.forEach(p=>unitOf[p]=u);
+      units.push(u);
+      members.forEach(id=>unitOf[id]=u);
     });
     unitsByGen[g]=units;
   });
 
-  // Liens strictement réels parent -> enfant.
+  // 2. Relations réelles entre les blocs.
   data.parentLinks.forEach(l=>{
     if(!allowed.has(l.parent)||!allowed.has(l.child))return;
     const p=unitOf[l.parent],c=unitOf[l.child];
@@ -916,101 +917,167 @@ function buildPedigreeLayout(startId){
     if(c.g===p.g+1){p.succs.add(c);c.preds.add(p);}
   });
 
-  const GAP=70,BRANCH_GAP=125,pos={},center={};
+  // Rang initial stable par date de naissance.
+  gens.forEach(g=>{
+    unitsByGen[g].sort((A,B)=>{
+      const av=Math.min(...A.members.map(id=>birthSortValue(data.people[id])));
+      const bv=Math.min(...B.members.map(id=>birthSortValue(data.people[id])));
+      return av-bv||A.seed-B.seed;
+    });
+  });
 
-  // IMPORTANT V7.3.2 :
-  // on construit DU HAUT VERS LE BAS uniquement.
-  // Une génération déjà placée n'est JAMAIS réordonnée par ses descendants.
-  // Cela empêche l'ajout de petits-enfants de déplacer/mélanger les branches supérieures.
-  gens.forEach((g,gi)=>{
-    let arr=unitsByGen[g];
+  const idx=g=>new Map((unitsByGen[g]||[]).map((u,i)=>[u,i]));
 
-    if(gi===0){
-      arr.sort((A,B)=>{
-        const av=Math.min(...A.members.map(id=>birthSortValue(data.people[id])));
-        const bv=Math.min(...B.members.map(id=>birthSortValue(data.people[id])));
-        return av-bv||A.seed-B.seed;
+  /*
+    RÈGLE V7.3.4 :
+    - si un bloc a des parents connus : son ordre dépend UNIQUEMENT de ses parents ;
+    - s'il n'a aucun parent connu (racine d'une branche) : son ordre peut dépendre
+      de ses enfants pour placer correctement les branches ascendantes.
+    Ainsi, ajouter des enfants/petits-enfants ne réorganise plus les frères/sœurs
+    déjà rattachés à leurs parents, tout en gardant DEMEUSE correctement organisé.
+  */
+  for(let pass=0;pass<12;pass++){
+    // Racines : elles s'ordonnent selon leurs descendants.
+    for(let gi=gens.length-2;gi>=0;gi--){
+      const g=gens[gi], next=gens[gi+1], ni=idx(next);
+      const arr=unitsByGen[g];
+      const roots=arr.filter(u=>u.preds.size===0);
+      if(roots.length<2)continue;
+
+      const score=new Map();
+      roots.forEach(u=>{
+        const vals=[...u.succs].filter(c=>ni.has(c)).map(c=>ni.get(c));
+        score.set(u,vals.length?vals.reduce((a,b)=>a+b,0)/vals.length:null);
       });
-    }else{
-      const prev=unitsByGen[gens[gi-1]]||[];
-      const pIndex=new Map(prev.map((u,i)=>[u,i]));
-      const pCenter=u=>{
-        const ps=[...u.preds].filter(p=>pIndex.has(p));
-        if(!ps.length)return null;
-        return ps.map(p=>center[p.id]).reduce((a,b)=>a+b,0)/ps.length;
-      };
-      arr.sort((A,B)=>{
-        const a=pCenter(A),b=pCenter(B);
-        if(a!==null&&b!==null&&Math.abs(a-b)>1)return a-b;
+
+      // On ne déplace que les racines entre elles ; les blocs déjà rattachés
+      // à des parents gardent leur position relative.
+      const rootSorted=[...roots].sort((A,B)=>{
+        const a=score.get(A),b=score.get(B);
+        if(a!==null&&b!==null&&Math.abs(a-b)>1e-9)return a-b;
         if(a!==null&&b===null)return -1;
         if(a===null&&b!==null)return 1;
         return A.seed-B.seed;
       });
+      let ri=0;
+      unitsByGen[g]=arr.map(u=>u.preds.size===0?rootSorted[ri++]:u);
     }
 
-    // Cible = centre exact des ascendants directs.
+    // Tous les blocs non-racines : ordre strict selon leurs parents.
+    for(let gi=1;gi<gens.length;gi++){
+      const g=gens[gi], prev=gens[gi-1], pi=idx(prev);
+      const arr=unitsByGen[g];
+      unitsByGen[g]=arr.map((u,old)=>{
+        const vals=[...u.preds].filter(p=>pi.has(p)).map(p=>pi.get(p));
+        return {u,old,b:vals.length?vals.reduce((a,b)=>a+b,0)/vals.length:null};
+      }).sort((A,B)=>{
+        if(A.b!==null&&B.b!==null&&Math.abs(A.b-B.b)>1e-9)return A.b-B.b;
+        if(A.b!==null&&B.b===null)return -1;
+        if(A.b===null&&B.b!==null)return 1;
+        return A.old-B.old;
+      }).map(x=>x.u);
+    }
+  }
+
+  // 3. Dans chaque couple, chacun reste du côté de sa propre ascendance.
+  gens.forEach((g,gi)=>{
+    if(gi===0)return;
+    const pi=idx(gens[gi-1]);
+    unitsByGen[g].forEach(u=>{
+      if(u.members.length!==2)return;
+      const score=id=>{
+        const ps=exactParents(id,allowed).map(p=>unitOf[p]).filter(p=>p&&pi.has(p));
+        if(!ps.length)return null;
+        return ps.map(p=>pi.get(p)).reduce((a,b)=>a+b,0)/ps.length;
+      };
+      const A=score(u.members[0]),B=score(u.members[1]);
+      if(A!==null&&B!==null&&A>B)u.members.reverse();
+      else if(A===null&&B!==null)u.members.reverse();
+    });
+  });
+
+  // 4. Placement horizontal.
+  const GAP=80, FAMILY_GAP=125, pos={},center={};
+
+  gens.forEach((g,gi)=>{
+    const arr=unitsByGen[g];
+
+    // Cibles :
+    // parent connu -> centre des parents ;
+    // racine -> centre des enfants déjà approximativement classés.
     const targets=arr.map(u=>{
       const ps=[...u.preds].filter(p=>center[p.id]!==undefined);
-      return ps.length ? ps.map(p=>center[p.id]).reduce((a,b)=>a+b,0)/ps.length : null;
+      if(ps.length)return ps.map(p=>center[p.id]).reduce((a,b)=>a+b,0)/ps.length;
+      return null;
     });
 
-    // Placement de gauche à droite, sans chevauchement.
     let cursor=PED_LEFT;
     arr.forEach((u,i)=>{
-      const ideal=targets[i]===null ? cursor : targets[i]-u.width/2;
+      const ideal=targets[i]===null?cursor:targets[i]-u.width/2;
       u.x=Math.max(cursor,ideal);
       cursor=u.x+u.width+GAP;
     });
 
-    // Puis de droite à gauche pour rapprocher chaque branche de SES parents
-    // sans jamais inverser l'ordre obtenu.
+    // Sépare davantage deux branches n'ayant aucun parent commun.
+    for(let i=1;i<arr.length;i++){
+      const A=arr[i-1],B=arr[i];
+      const sameFamily=[...A.preds].some(p=>B.preds.has(p));
+      const need=A.x+A.width+(sameFamily?GAP:FAMILY_GAP);
+      if(B.x<need){
+        const d=need-B.x;
+        for(let j=i;j<arr.length;j++)arr[j].x+=d;
+      }
+    }
+
+    // Resserrement vers les parents, sans changer l'ordre.
     for(let i=arr.length-2;i>=0;i--){
       if(targets[i]===null)continue;
       const maxX=arr[i+1].x-GAP-arr[i].width;
       const ideal=targets[i]-arr[i].width/2;
-      arr[i].x=Math.min(maxX,Math.max(arr[i].x,ideal));
-    }
-
-    // Séparation visuelle supplémentaire entre familles qui n'ont aucun parent commun.
-    for(let i=1;i<arr.length;i++){
-      const A=arr[i-1],B=arr[i];
-      const common=[...A.preds].some(p=>B.preds.has(p));
-      const needed=A.x+A.width+(common?GAP:BRANCH_GAP);
-      if(B.x<needed){
-        const delta=needed-B.x;
-        for(let j=i;j<arr.length;j++)arr[j].x+=delta;
-      }
+      if(ideal<=maxX)arr[i].x=Math.max(PED_LEFT,Math.min(arr[i].x,ideal));
     }
 
     arr.forEach(u=>center[u.id]=u.x+u.width/2);
   });
 
-  // Ajustement interne des couples : chacun du côté de sa propre ascendance.
-  gens.forEach((g,gi)=>{
-    if(gi===0)return;
-    const prev=unitsByGen[gens[gi-1]]||[];
-    const pIndex=new Map(prev.map((u,i)=>[u,i]));
-    unitsByGen[g].forEach(u=>{
-      if(u.members.length!==2)return;
-      const score=id=>{
-        const ps=exactParents(id,allowed).map(p=>unitOf[p]).filter(x=>x&&pIndex.has(x));
-        if(!ps.length)return null;
-        return ps.map(x=>center[x.id]).reduce((a,b)=>a+b,0)/ps.length;
-      };
-      const a=score(u.members[0]),b=score(u.members[1]);
-      if(a!==null&&b!==null&&a>b)u.members.reverse();
-      else if(a===null&&b!==null)u.members.reverse();
+  /*
+    5. Repositionnement des RACINES après placement des descendants.
+    C'est ce qui permet à DEMEUSE de garder les deux ascendances d'un couple
+    au-dessus de celui-ci sans toucher aux générations déjà rattachées.
+  */
+  for(let gi=gens.length-2;gi>=0;gi--){
+    const g=gens[gi],arr=unitsByGen[g];
+    const roots=arr.filter(u=>u.preds.size===0);
+    roots.forEach(u=>{
+      const cs=[...u.succs].filter(c=>center[c.id]!==undefined);
+      if(cs.length){
+        const target=cs.map(c=>center[c.id]).reduce((a,b)=>a+b,0)/cs.length;
+        u.x=target-u.width/2;
+        center[u.id]=target;
+      }
     });
-  });
 
-  // Recentrage global sans changer aucune relation spatiale.
-  const allUnits=gens.flatMap(g=>unitsByGen[g]);
-  const minX=Math.min(PED_LEFT,...allUnits.map(u=>u.x));
+    // Anti-chevauchement local après recentrage des racines.
+    for(let i=1;i<arr.length;i++){
+      const min=arr[i-1].x+arr[i-1].width+GAP;
+      if(arr[i].x<min){
+        const d=min-arr[i].x;
+        for(let j=i;j<arr.length;j++){
+          arr[j].x+=d;
+          center[arr[j].id]+=d;
+        }
+      }
+    }
+  }
+
+  // 6. Translation globale uniquement.
+  const all=gens.flatMap(g=>unitsByGen[g]);
+  const minX=Math.min(PED_LEFT,...all.map(u=>u.x));
   const shift=minX<PED_LEFT?PED_LEFT-minX:0;
   let canvasW=1200;
 
-  gens.forEach((g,rowIndex)=>{
-    const y=PED_TOP+rowIndex*PED_ROW_STEP;
+  gens.forEach((g,row)=>{
+    const y=PED_TOP+row*PED_ROW_STEP;
     unitsByGen[g].forEach(u=>{
       const ux=u.x+shift;
       u.members.forEach((id,i)=>{
