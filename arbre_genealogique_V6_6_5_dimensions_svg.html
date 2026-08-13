@@ -1,0 +1,1194 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Mon arbre généalogique – V6.6.5</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://unpkg.com/viz.js@2.1.2/viz.js"></script>
+<script src="https://unpkg.com/viz.js@2.1.2/full.render.js"></script>
+<style>
+:root{
+  --bg:#f7f3ee;--panel:#fff;--ink:#2e2925;--muted:#756b63;--accent:#8b6b52;
+  --border:#dfd2c6;--male:#dcecfb;--female:#f8e2eb;--other:#ece7f6;--line:#9e816b;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--ink)}
+button,.fileBtn,select,input,textarea{font:inherit}
+button,.fileBtn{appearance:none;border:1px solid #d8c9bc;background:#fff;border-radius:10px;padding:9px 11px;font-weight:650;color:var(--ink);cursor:pointer}
+button:hover,.fileBtn:hover{background:#f6eee8}
+button.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+button.danger{color:#a63e3e}
+button.small{padding:5px 8px;font-size:12px;border-radius:8px}
+input,select,textarea{border:1px solid #d9cec4;border-radius:9px;padding:9px 10px;background:#fff;color:var(--ink)}
+textarea{min-height:90px;resize:vertical}
+input[type=file]{display:none}
+
+header{position:sticky;top:0;z-index:40;background:#fff;border-bottom:1px solid var(--border);padding:10px 12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+header h1{font-size:18px;margin:0 10px 0 0;flex:1;min-width:220px}
+.bar{background:#fff;border-bottom:1px solid var(--border);padding:8px 12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.syncbar{background:#f8fbff}
+.syncOk{color:#24734a;font-weight:700}.syncBusy{color:#91651f}.syncErr{color:#b04444;font-weight:700}
+.layout{display:grid;grid-template-columns:300px 1fr;height:calc(100vh - 154px);min-height:520px}
+aside{background:#fff;border-right:1px solid var(--border);padding:12px;overflow:auto}
+main{position:relative;min-width:0;background:linear-gradient(#faf7f3,#f5eee7)}
+.hint{font-size:12px;color:var(--muted);line-height:1.45}
+.search{width:100%;margin:9px 0}
+.personRow{padding:8px 9px;border-radius:9px;cursor:pointer;display:flex;gap:8px;align-items:center}
+.personRow:hover,.personRow.active{background:#f1e6dc}
+.personRow img{width:34px;height:34px;object-fit:cover;border-radius:50%;border:1px solid #d2c2b5}
+.personRow .txt{min-width:0}.personRow small{display:block;color:var(--muted)}
+.status{font-size:12px;color:var(--muted);margin-top:10px}
+
+.relationshipBox{border-top:1px solid #eee2d8;margin-top:12px;padding-top:12px}
+.relationshipBox select{width:100%;margin:4px 0}
+.relationshipResult{font-size:13px;background:#faf6f2;padding:8px;border-radius:8px;margin-top:7px;min-height:34px}
+
+.treeTools{position:absolute;top:10px;right:10px;z-index:25;display:flex;gap:6px;background:#fffddd;padding:6px;border-radius:12px;box-shadow:0 4px 16px rgba(0,0,0,.1)}
+#treeViewport{position:absolute;inset:0;overflow:hidden;touch-action:none;cursor:grab}
+#treeViewport.dragging{cursor:grabbing}
+#treeStage{position:absolute;left:0;top:0;transform-origin:0 0;will-change:transform}
+.familyGraph{position:relative;min-width:1100px;padding:30px 50px 100px}
+.generationRow{position:relative;display:flex;justify-content:center;align-items:flex-start;gap:90px;flex-wrap:nowrap;padding:34px 20px 70px;z-index:2;min-width:max-content}
+.familyUnit{display:flex;gap:14px;align-items:flex-start;position:relative}
+.siblingUnit{padding:30px 22px 12px;border-radius:16px;background:rgba(255,255,255,.34);border:1px dashed rgba(158,129,107,.32)}
+.familyUnitLabel{position:absolute;top:7px;left:12px;right:12px;text-align:center;font-size:10px;font-weight:700;color:#8a7869;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.generationRow{column-gap:110px!important}
+.generationLabel{position:absolute;left:10px;top:5px;color:var(--muted);font-size:11px;font-weight:700}
+.personCard{width:176px;min-height:104px;border:2px solid #d7c8bb;border-radius:14px;padding:9px 10px;background:#fff;box-shadow:0 3px 12px rgba(0,0,0,.06);cursor:pointer;position:relative;z-index:3;flex:0 0 176px}
+.personCard.male{background:var(--male)}.personCard.female{background:var(--female)}.personCard.other{background:var(--other)}
+.personCard.selected{outline:3px solid var(--accent)}
+.cardTop{display:flex;gap:8px;align-items:flex-start}
+.cardPhoto{width:46px;height:46px;border-radius:50%;object-fit:cover;border:1px solid #cfbcae;background:#fff}
+.cardPhoto.placeholder{display:flex;align-items:center;justify-content:center;font-size:22px}
+.cardText{min-width:0;flex:1}.surname{font-weight:800;text-transform:uppercase;font-size:14px;word-break:break-word}.firstname{font-weight:650;font-size:14px;word-break:break-word}
+.meta{font-size:11px;color:#665d56;margin-top:4px;line-height:1.3}
+.unionCount{display:inline-block;font-size:9px;margin-top:5px;padding:2px 5px;border-radius:999px;background:#fff9;border:1px solid #cdbcae}
+.branchToggle{position:absolute;right:5px;bottom:5px;width:25px;height:25px;padding:0;border-radius:50%;font-size:13px;z-index:5}
+#familyLines{position:absolute;left:0;top:0;width:100%;height:100%;overflow:visible;pointer-events:none;z-index:1}
+.unionLine{stroke:var(--line);stroke-width:3;fill:none;stroke-linecap:round}
+.childLine{stroke:#a88e78;stroke-width:2.4;fill:none;stroke-linecap:round;stroke-linejoin:round}.childCurve{stroke:#a88e78;stroke-width:2.2;fill:none;stroke-linecap:round}
+.singleParentLine{stroke:#a88e78;stroke-width:2.5;fill:none;stroke-dasharray:5 4}
+.unionDot{fill:var(--line)}
+.treeEmpty{padding:70px;text-align:center;color:var(--muted)}
+
+.modalOverlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.42);z-index:100;padding:18px;overflow:auto}
+.modalOverlay.show{display:flex;align-items:flex-start;justify-content:center}
+.modal{width:min(700px,100%);margin:25px auto;background:#fff;border-radius:16px;box-shadow:0 20px 70px rgba(0,0,0,.3);overflow:hidden}
+.modalHead{padding:14px 16px;border-bottom:1px solid #eee2d8;display:flex;justify-content:space-between;align-items:center}
+.modalBody{padding:16px;display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.field{display:flex;flex-direction:column;gap:5px}.full{grid-column:1/-1}
+label{font-size:12px;font-weight:700;color:#665d56}
+.modalActions{padding:13px 16px;border-top:1px solid #eee2d8;display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap}
+.section{border-top:1px solid #eee2d8;margin-top:4px;padding-top:12px}
+.relationButtons{display:flex;gap:7px;flex-wrap:wrap}
+.photoPreview{width:120px;height:120px;object-fit:cover;border-radius:12px;border:1px solid #d8c9bc;background:#faf7f3}
+.unionItem{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px;border:1px solid #e6d9ce;border-radius:9px;margin-top:6px}
+.unionItem small{color:var(--muted)}
+.unionFields{display:none}.unionFields.show{display:contents}
+
+.batchChildRow{display:grid;grid-template-columns:1.1fr 1.1fr 1fr .9fr auto;gap:7px;align-items:end;padding:8px;border:1px solid #e6d9ce;border-radius:10px;margin-top:8px;background:#faf7f3}
+.batchChildRow .field{min-width:0}.batchChildRow button{height:40px}
+@media(max-width:800px){.batchChildRow{grid-template-columns:1fr 1fr}.batchChildRow .removeBatchRow{grid-column:1/-1}}
+
+
+@media(max-width:800px){
+  header{position:relative} header h1{flex-basis:100%}
+  .bar{overflow-x:auto;flex-wrap:nowrap}.bar>*{flex:0 0 auto}
+  .layout{grid-template-columns:1fr;height:calc(100vh - 220px)}
+  aside{display:none}
+  main{height:100%}
+  .treeTools{top:7px;right:7px}
+  .familyGraph{min-width:900px;padding:25px 35px 80px}
+  .personCard{width:158px;flex-basis:158px}
+  .modalOverlay{padding:0}.modal{margin:0;min-height:100%;border-radius:0;width:100%}
+  .modalBody{grid-template-columns:1fr}.full{grid-column:auto}
+}
+@media print{
+  @page{size:landscape;margin:8mm}
+  header,.bar,aside,.treeTools,.modalOverlay{display:none!important}
+  body,.layout,main,#treeViewport{height:auto!important;overflow:visible!important;background:#fff!important}
+  .layout{display:block!important}
+  #treeViewport{position:static!important}
+  #treeStage{position:static!important;transform:none!important}
+  .familyGraph{min-width:0!important;padding:10px!important}
+  .generationRow{page-break-inside:avoid}
+  .personCard{box-shadow:none}
+}
+
+#tree{min-width:100%;min-height:100%;padding:20px}
+#tree .graphvizWrap{display:inline-block;min-width:max-content}
+#tree .graphvizWrap svg{overflow:visible;max-width:none}
+#tree g.node{cursor:pointer}
+#tree .loadingGraph{padding:60px;text-align:center;color:var(--muted);font-weight:600}
+#tree .graphError{padding:30px;color:#a63e3e;background:#fff;border:1px solid #e3c8c8;border-radius:12px;margin:20px}
+
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🌳 Mon arbre généalogique <small style="font-weight:500;color:#756b63">V6.6.5</small></h1>
+  <button class="primary" id="btnNew">+ Personne</button>
+  <button id="btnPrintVisible">🖨️ Imprimer la branche</button>
+  <button id="btnPrintFull">🖨️ Imprimer l’arbre complet</button><button id="btnCheckTree">✓ Vérifier les liens</button>
+  <button id="btnExport">Exporter</button>
+  <label class="fileBtn" for="fileImport">Importer</label><input type="file" id="fileImport" accept=".json,application/json">
+</header>
+
+<div class="bar">
+  <strong>🌳 Arbre :</strong>
+  <select id="treeSelect"></select>
+  <button id="btnNewTree">+ Nouvel arbre</button>
+  <button id="btnRenameTree">Renommer</button>
+  <button id="btnDeleteTree" class="danger">Supprimer l’arbre</button>
+</div>
+
+<div class="bar syncbar">
+  <strong>☁️ Synchronisation :</strong>
+  <span id="syncStatus">Non connecté</span>
+  <input id="authEmail" type="email" placeholder="Votre adresse e-mail" style="width:225px">
+  <button id="btnLogin">Recevoir un lien de connexion</button>
+  <button id="btnLogout" style="display:none">Se déconnecter</button>
+  <button id="btnSync" style="display:none">Synchroniser maintenant</button>
+</div>
+
+<div class="layout">
+<aside>
+  <div class="hint">Recherche une personne puis clique dessus pour ouvrir sa fiche. Les boutons ⊖/⊕ sur les cartes replient ou déplient une descendance. Chaque enfant est relié par sa propre ligne à ses parents.</div>
+  <input class="search" id="search" placeholder="Rechercher nom ou prénom…">
+  <div id="personList"></div>
+  <div id="status" class="status"></div>
+  <div class="relationshipBox">
+    <strong style="font-size:13px">Lien de parenté</strong>
+    <select id="relA"></select>
+    <select id="relB"></select>
+    <button id="btnRelationship" style="width:100%">Calculer le lien</button>
+    <div class="relationshipResult" id="relationshipResult">Sélectionne deux personnes.</div>
+  </div>
+</aside>
+
+<main>
+  <div class="treeTools">
+    <button class="small" id="zoomOut">−</button>
+    <button class="small" id="zoomReset">100%</button>
+    <button class="small" id="zoomIn">+</button>
+    <button class="small" id="centerSelected">◎ Centrer</button>
+  </div>
+  <div id="treeViewport"><div id="treeStage"><div id="tree"></div></div></div>
+</main>
+</div>
+
+<!-- FICHE PERSONNE -->
+<div class="modalOverlay" id="personOverlay"><div class="modal">
+  <div class="modalHead"><strong id="personTitle">Personne</strong><button type="button" id="closePerson">✕</button></div>
+  <div class="modalBody">
+    <div class="field"><label>Nom</label><input id="lastName"></div>
+    <div class="field"><label>Prénom *</label><input id="firstName"></div>
+    <div class="field"><label>Date de naissance</label><input id="birth" placeholder="JJ/MM/AAAA"></div>
+    <div class="field"><label>Sexe</label><select id="gender"><option value="female">Femme</option><option value="male">Homme</option><option value="other">Autre / non précisé</option></select></div>
+    <div class="field"><label>Date de décès</label><input id="death" placeholder="JJ/MM/AAAA"></div>
+    <div class="field">
+      <label>Photo</label>
+      <img id="photoPreview" class="photoPreview" alt="">
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
+        <label class="fileBtn" for="photoFile">Choisir une photo</label><input id="photoFile" type="file" accept="image/*">
+        <button type="button" id="removePhoto" class="small">Retirer</button>
+      </div>
+      <div class="hint">La photo est automatiquement compressée avant sauvegarde.</div>
+    </div>
+    <div class="field full"><label>Commentaire</label><textarea id="notes"></textarea></div>
+
+    <div class="field full section" id="relationsBox">
+      <label>Famille et unions</label>
+      <div class="relationButtons">
+        <button type="button" id="btnParent">+ Parent</button>
+        <button type="button" id="btnPartner">+ Conjoint / remariage</button>
+        <button type="button" id="btnChild">+ Enfant</button>
+        <button type="button" id="btnChildrenBatch">+ Plusieurs enfants</button>
+      </div>
+      <div id="unionList"></div>
+    </div>
+  </div>
+  <div class="modalActions">
+    <button type="button" class="danger" id="btnDelete">Supprimer</button>
+    <button type="button" id="btnCancelPerson">Annuler</button>
+    <button type="button" class="primary" id="btnSavePerson">Enregistrer</button>
+  </div>
+</div></div>
+
+<!-- AJOUT RELATION -->
+<div class="modalOverlay" id="relationOverlay"><div class="modal">
+  <div class="modalHead"><strong id="relationTitle">Ajouter une relation</strong><button type="button" id="closeRelation">✕</button></div>
+  <div class="modalBody">
+    <div class="field full"><label>Personne existante</label><select id="existing"></select></div>
+    <div class="field full"><div class="hint">Ou crée une nouvelle personne.</div></div>
+    <div class="field"><label>Nom</label><input id="relLast"></div>
+    <div class="field"><label>Prénom</label><input id="relFirst"></div>
+    <div class="field"><label>Date de naissance</label><input id="relBirth"></div>
+    <div class="field"><label>Sexe</label><select id="relGender"><option value="female">Femme</option><option value="male">Homme</option><option value="other">Autre / non précisé</option></select></div>
+    <div class="field full" id="otherParentBox"><label>Autre parent de l’enfant</label><select id="otherParent"></select></div>
+    <div class="field unionFields" id="unionTypeField"><label>Type d’union</label><select id="unionType"><option>Mariage</option><option>Union libre</option><option>Partenariat</option><option>Parents / autre</option><option>Inconnu</option></select></div>
+    <div class="field unionFields" id="unionStartField"><label>Date de mariage / début d’union</label><input id="unionStart" placeholder="JJ/MM/AAAA"></div>
+    <div class="field unionFields" id="unionEndField"><label>Date de séparation / divorce / fin</label><input id="unionEnd" placeholder="JJ/MM/AAAA"></div>
+  </div>
+  <div class="modalActions"><button type="button" id="btnCancelRelation">Annuler</button><button type="button" class="primary" id="btnSaveRelation">Ajouter</button></div>
+</div></div>
+
+
+<!-- AJOUT MULTIPLE D'ENFANTS -->
+<div class="modalOverlay" id="childrenBatchOverlay"><div class="modal">
+  <div class="modalHead"><strong id="childrenBatchTitle">Ajouter plusieurs enfants</strong><button type="button" id="closeChildrenBatch">✕</button></div>
+  <div class="modalBody">
+    <div class="field full">
+      <label>Deuxième parent</label>
+      <select id="batchOtherParent"></select>
+      <div class="hint">Le deuxième parent est choisi une seule fois pour toute la fratrie.</div>
+    </div>
+    <div class="field full">
+      <label>Enfants</label>
+      <div id="batchChildrenList"></div>
+      <button type="button" id="addBatchChildRow" style="margin-top:8px">+ Ajouter un enfant</button>
+    </div>
+  </div>
+  <div class="modalActions">
+    <button type="button" id="cancelChildrenBatch">Annuler</button>
+    <button type="button" class="primary" id="saveChildrenBatch">Enregistrer tous les enfants</button>
+  </div>
+</div></div>
+
+<!-- MODIFICATION UNION -->
+<div class="modalOverlay" id="unionOverlay"><div class="modal">
+  <div class="modalHead"><strong id="unionTitle">Modifier l’union</strong><button type="button" id="closeUnion">✕</button></div>
+  <div class="modalBody">
+    <div class="field full"><label>Type d’union</label><select id="editUnionType"><option>Mariage</option><option>Union libre</option><option>Partenariat</option><option>Parents / autre</option><option>Inconnu</option></select></div>
+    <div class="field"><label>Date de mariage / début</label><input id="editUnionStart"></div>
+    <div class="field"><label>Date de séparation / divorce / fin</label><input id="editUnionEnd"></div>
+  </div>
+  <div class="modalActions"><button type="button" class="danger" id="removeUnion">Supprimer uniquement l’union</button><button type="button" id="cancelUnion">Annuler</button><button type="button" class="primary" id="saveUnion">Enregistrer</button></div>
+</div></div>
+
+<script>
+(function(){
+'use strict';
+
+const SUPABASE_URL='https://ebyvtvnxamnalfkorpla.supabase.co';
+const SUPABASE_KEY='sb_publishable_RExMMjJHo_7Cuh2mxu18XQ_Ub-nk-KX';
+const sb=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
+const KEY='genealogie_multi_v1', OLD_KEY='genealogie_v2', VIEW_KEY='genealogie_view_v6';
+const $=id=>document.getElementById(id);
+let currentUser=null,syncing=false,saveTimer=null,editingId=null,relationMode=null,relationSource=null,editingUnionId=null,tempPhoto='';
+let collapsed=new Set();
+let viewScale=1,panX=20,panY=20,isPanning=false,startPan=null;
+let printRestoreCollapsed=null;
+
+function emptyData(){return {people:{},parentLinks:[],unions:[],selectedId:null};}
+function normalizeData(d){
+  d=d||emptyData(); d.people=d.people||{}; d.parentLinks=Array.isArray(d.parentLinks)?d.parentLinks:[]; d.unions=Array.isArray(d.unions)?d.unions:[]; 
+  Object.values(d.people).forEach(p=>{ if(p.photo===undefined)p.photo=''; if(p.notes===undefined)p.notes=''; });
+  d.unions.forEach(u=>{ if(!u.type)u.type='Parents / autre'; if(u.startDate===undefined)u.startDate=''; if(u.endDate===undefined)u.endDate=''; });
+  return d;
+}
+let store;
+try{store=JSON.parse(localStorage.getItem(KEY));}catch(e){}
+if(!store||!store.trees){
+  let old=null;try{old=JSON.parse(localStorage.getItem(OLD_KEY));}catch(e){}
+  const d=old&&old.people?normalizeData(old):{people:{p1:{id:'p1',lastName:'',firstName:'Personne de départ',birth:'',gender:'female',death:'',photo:'',notes:''}},parentLinks:[],unions:[],selectedId:'p1'};
+  store={activeTreeId:'t1',trees:{t1:{id:'t1',name:'Mon premier arbre',data:d,savedAt:0}}};
+}
+Object.values(store.trees).forEach(t=>{t.data=normalizeData(t.data);t.savedAt=t.savedAt||0;});
+let data=store.trees[store.activeTreeId].data;
+
+function uid(prefix='p'){return prefix+Date.now().toString(36)+Math.random().toString(36).slice(2,6);}
+function esc(s){return String(s||'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));}
+function nameOf(p){return [p?.lastName,p?.firstName].filter(Boolean).join(' ')||'Sans nom';}
+function optionLabel(p){return nameOf(p)+(p?.birth?' — né(e) le '+p.birth:'');}
+function treeName(){return store.trees[store.activeTreeId]?.name||'Mon arbre';}
+function getParents(id){return data.parentLinks.filter(x=>x.child===id).map(x=>x.parent);}
+function getChildren(id){return data.parentLinks.filter(x=>x.parent===id).map(x=>x.child);}
+function getPartners(id){const a=[];data.unions.forEach(u=>{if(u.a===id)a.push(u.b);if(u.b===id)a.push(u.a);});return [...new Set(a)];}
+function unionBetween(a,b){return data.unions.find(u=>(u.a===a&&u.b===b)||(u.a===b&&u.b===a));}
+function ensureUnion(a,b,meta={}){
+  if(!a||!b||a===b)return null;
+  let u=unionBetween(a,b);
+  if(!u){u={id:uid('u'),a,b,type:'Parents / autre',startDate:'',endDate:''};data.unions.push(u);}
+  if(meta.type)u.type=meta.type;if(meta.startDate!==undefined&&meta.startDate!=='')u.startDate=meta.startDate;if(meta.endDate!==undefined&&meta.endDate!=='')u.endDate=meta.endDate;
+  return u;
+}
+function isDescendantOf(id,ancestor){
+  const q=[ancestor],seen=new Set();
+  while(q.length){const x=q.shift();if(seen.has(x))continue;seen.add(x);for(const c of getChildren(x)){if(c===id)return true;q.push(c);}}
+  return false;
+}
+function wouldCreateParentCycle(parentId,childId){
+  // Ajouter parentId -> childId est impossible si parentId est déjà un descendant de childId.
+  return parentId===childId || isDescendantOf(parentId,childId);
+}
+function directGenerationConflict(a,b){
+  // Deux personnes déjà reliées verticalement ne doivent pas être ajoutées comme conjointes,
+  // car une union doit rester sur un même niveau d'affichage.
+  return isDescendantOf(a,b)||isDescendantOf(b,a);
+}
+function isHiddenByCollapse(id){
+  for(const c of collapsed){if(c!==id&&isDescendantOf(id,c)&&!isDescendantOf(data.selectedId,c))return true;}
+  return false;
+}
+
+function persistLocal(){
+  store.trees[store.activeTreeId].data=data;
+  localStorage.setItem(KEY,JSON.stringify(store));
+}
+function save(){
+  const t=store.trees[store.activeTreeId]; t.data=data;t.savedAt=Date.now();
+  persistLocal();render();
+  if(currentUser){clearTimeout(saveTimer);saveTimer=setTimeout(pushAllTrees,800);}
+}
+function formatTime(ts){return new Date(ts).toLocaleTimeString('fr-BE',{hour:'2-digit',minute:'2-digit'});}
+function setSyncStatus(text,cls=''){const e=$('syncStatus');e.textContent=text;e.className=cls;}
+function syncErrorText(e){
+  const parts=[];
+  if(e?.message)parts.push(e.message);
+  if(e?.code)parts.push('code '+e.code);
+  if(e?.details)parts.push(e.details);
+  return parts.join(' — ')||'Erreur inconnue';
+}
+async function ensureFreshSession(){
+  const {data:{session},error}=await sb.auth.getSession();
+  if(error)throw error;
+  if(!session)return null;
+  const expiresSoon=session.expires_at && (session.expires_at*1000-Date.now()<120000);
+  if(expiresSoon){
+    const {data,error:refreshError}=await sb.auth.refreshSession();
+    if(refreshError)throw refreshError;
+    return data.session;
+  }
+  return session;
+}
+
+async function login(){
+  const email=$('authEmail').value.trim();if(!email){alert('Indique ton adresse e-mail.');return;}
+  setSyncStatus('Envoi du lien…','syncBusy');
+  const {error}=await sb.auth.signInWithOtp({email,options:{emailRedirectTo:'https://funny-beignet-20cdf0.netlify.app/'}});
+  if(error){setSyncStatus('Erreur de connexion','syncErr');alert(error.message);return;}
+  setSyncStatus('Lien envoyé par e-mail.','syncOk');
+}
+async function logout(){await sb.auth.signOut();currentUser=null;refreshAuthUI();}
+async function refreshAuthUI(){
+  try{
+    const session=await ensureFreshSession();
+    currentUser=session?.user||null;
+    $('authEmail').style.display=currentUser?'none':'inline-block';
+    $('btnLogin').style.display=currentUser?'none':'inline-block';
+    $('btnLogout').style.display=currentUser?'inline-block':'none';
+    $('btnSync').style.display=currentUser?'inline-block':'none';
+    if(currentUser){
+      setSyncStatus('Connecté : '+currentUser.email,'syncOk');
+      await syncBothWays();
+    }else{
+      setSyncStatus('Non connecté');
+    }
+  }catch(e){
+    console.error('refreshAuthUI',e);
+    currentUser=null;
+    $('authEmail').style.display='inline-block';
+    $('btnLogin').style.display='inline-block';
+    $('btnLogout').style.display='none';
+    $('btnSync').style.display='none';
+    setSyncStatus('Session expirée — reconnecte-toi','syncErr');
+  }
+}
+async function pushAllTrees(){
+  if(syncing)return;
+  syncing=true;
+  setSyncStatus('Sauvegarde en ligne…','syncBusy');
+  try{
+    const session=await ensureFreshSession();
+    if(!session){currentUser=null;throw new Error('Session expirée. Reconnecte-toi.');}
+    currentUser=session.user;
+
+    const {data:rows,error}=await sb.from('arbres').select('id,tree_name,tree_data').eq('user_id',currentUser.id);
+    if(error)throw error;
+
+    for(const t of Object.values(store.trees)){
+      const existing=(rows||[]).find(r=>r.id===t.cloudId||(r.tree_data&&r.tree_data.local_id===t.id));
+      const payload={user_id:currentUser.id,tree_name:t.name,tree_data:{local_id:t.id,data:t.data,saved_at:t.savedAt||Date.now()}};
+      if(existing){
+        const {error:e}=await sb.from('arbres').update(payload).eq('id',existing.id);
+        if(e)throw e;
+        t.cloudId=existing.id;
+      }else{
+        const {data:r,error:e}=await sb.from('arbres').insert(payload).select('id').single();
+        if(e)throw e;
+        t.cloudId=r.id;
+      }
+    }
+    persistLocal();
+    setSyncStatus('Sauvegardé à '+formatTime(Date.now())+' ✓','syncOk');
+    return true;
+  }catch(e){
+    console.error('pushAllTrees',e);
+    setSyncStatus('Erreur : '+syncErrorText(e),'syncErr');
+    return false;
+  }finally{
+    syncing=false;
+  }
+}
+async function syncBothWays(){
+  if(syncing)return;
+  syncing=true;
+  setSyncStatus('Synchronisation…','syncBusy');
+  try{
+    const session=await ensureFreshSession();
+    if(!session){currentUser=null;throw new Error('Session expirée. Reconnecte-toi.');}
+    currentUser=session.user;
+
+    const {data:rows,error}=await sb.from('arbres')
+      .select('id,tree_name,tree_data')
+      .eq('user_id',currentUser.id);
+    if(error)throw error;
+
+    if(rows&&rows.length){
+      for(const r of rows){
+        const localId=(r.tree_data&&r.tree_data.local_id)||('cloud_'+r.id);
+        store.trees[localId]={
+          id:localId,
+          name:r.tree_name||'Arbre',
+          data:normalizeData((r.tree_data&&r.tree_data.data)||emptyData()),
+          savedAt:(r.tree_data&&r.tree_data.saved_at)||Date.now(),
+          cloudId:r.id
+        };
+      }
+      if(!store.trees[store.activeTreeId])store.activeTreeId=Object.keys(store.trees)[0];
+      data=store.trees[store.activeTreeId].data;
+      persistLocal();
+      render();
+      setSyncStatus('Synchronisé depuis le cloud ✓','syncOk');
+    }else{
+      syncing=false;
+      await pushAllTrees();
+      return;
+    }
+  }catch(e){
+    console.error('syncBothWays',e);
+    setSyncStatus('Erreur : '+syncErrorText(e),'syncErr');
+  }finally{
+    syncing=false;
+  }
+}
+function switchTree(id){if(!store.trees[id])return;store.activeTreeId=id;data=store.trees[id].data;collapsed.clear();persistLocal();render();resetView();}
+function newTree(){const name=prompt('Nom du nouvel arbre :','Nouvel arbre');if(!name)return;const id=uid('t');store.trees[id]={id,name:name.trim(),data:emptyData(),savedAt:Date.now()};store.activeTreeId=id;data=store.trees[id].data;save();resetView();}
+function renameTree(){const name=prompt('Nouveau nom :',treeName());if(!name)return;store.trees[store.activeTreeId].name=name.trim();save();}
+async function deleteTree(){
+  if(Object.keys(store.trees).length<=1){alert('Il faut conserver au moins un arbre.');return;}
+  if(!confirm('Supprimer définitivement l’arbre « '+treeName()+' » ?'))return;
+  const t=store.trees[store.activeTreeId];
+  if(currentUser&&t.cloudId){try{await sb.from('arbres').delete().eq('id',t.cloudId);}catch(e){}}
+  delete store.trees[store.activeTreeId];store.activeTreeId=Object.keys(store.trees)[0];data=store.trees[store.activeTreeId].data;persistLocal();render();resetView();
+}
+
+function component(startId){
+  const seen=new Set(),q=[startId];
+  while(q.length){const id=q.shift();if(!id||seen.has(id)||!data.people[id]||isHiddenByCollapse(id))continue;seen.add(id);getParents(id).forEach(x=>q.push(x));getPartners(id).forEach(x=>q.push(x));if(!collapsed.has(id))getChildren(id).forEach(x=>q.push(x));}
+  return [...seen];
+}
+function generationMap(startId){
+  const ids=component(startId),allowed=new Set(ids);
+  if(!ids.length)return {};
+  const gen={[startId]:0},q=[startId],vertical={};
+  ids.forEach(id=>vertical[id]=[]);
+  data.parentLinks.forEach(l=>{
+    if(!allowed.has(l.parent)||!allowed.has(l.child))return;
+    vertical[l.parent].push([l.child,1]);
+    vertical[l.child].push([l.parent,-1]);
+  });
+  while(q.length){
+    const id=q.shift();
+    for(const [other,delta] of vertical[id]||[]){
+      if(gen[other]===undefined){gen[other]=gen[id]+delta;q.push(other);}
+    }
+  }
+  let changed=true,guard=0;
+  while(changed&&guard++<30){
+    changed=false;
+    data.unions.forEach(u=>{
+      if(!allowed.has(u.a)||!allowed.has(u.b))return;
+      if(gen[u.a]!==undefined&&gen[u.b]===undefined){gen[u.b]=gen[u.a];changed=true;}
+      else if(gen[u.b]!==undefined&&gen[u.a]===undefined){gen[u.a]=gen[u.b];changed=true;}
+    });
+    ids.forEach(id=>{
+      if(gen[id]===undefined)return;
+      for(const [other,delta] of vertical[id]||[]){
+        if(gen[other]===undefined){gen[other]=gen[id]+delta;changed=true;}
+      }
+    });
+  }
+  ids.forEach(id=>{if(gen[id]===undefined)gen[id]=0;});
+  return gen;
+}
+function parentFamilyKey(id){
+  const parents=getParents(id).slice().sort();
+  return parents.length ? parents.join('|') : 'ROOT:'+id;
+}
+function birthSortValue(p){
+  const s=(p?.birth||'').trim();
+  const m=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  return m ? Number(m[3])*10000+Number(m[2])*100+Number(m[1]) : Number.MAX_SAFE_INTEGER;
+}
+function familyLabel(parents){
+  if(!parents.length)return '';
+  if(parents.length===1)return 'Enfant(s) de '+nameOf(data.people[parents[0]]);
+  return 'Enfants de '+nameOf(data.people[parents[0]])+' + '+nameOf(data.people[parents[1]]);
+}
+function siblingGroupsAtLevel(ids){
+  const groups=new Map();
+  ids.forEach(id=>{
+    const parents=getParents(id).slice().sort();
+    const key=parents.length?parents.join('|'):'ROOT:'+id;
+    if(!groups.has(key))groups.set(key,{key,ids:[],parents});
+    groups.get(key).ids.push(id);
+  });
+  groups.forEach(g=>{
+    g.ids.sort((a,b)=>{
+      const av=birthSortValue(data.people[a]),bv=birthSortValue(data.people[b]);
+      return av-bv || nameOf(data.people[a]).localeCompare(nameOf(data.people[b]),'fr');
+    });
+  });
+  return [...groups.values()];
+}
+function parentGroupPosition(group,previousIndex){
+  const vals=group.parents.map(p=>previousIndex[p]).filter(v=>v!==undefined);
+  return vals.length?vals.reduce((a,b)=>a+b,0)/vals.length:Number.MAX_SAFE_INTEGER;
+}
+function arrangeSpouseEdges(groups,genMap,g){
+  const groupOf={};
+  groups.forEach((gr,gi)=>gr.ids.forEach(id=>groupOf[id]=gi));
+
+  // Work repeatedly because a generation can contain several marriages between branches.
+  for(let gi=0;gi<groups.length;gi++){
+    const gr=groups[gi];
+    const left=[],right=[],middle=[];
+    for(const id of gr.ids){
+      const external=getPartners(id)
+        .filter(p=>genMap[p]===g && groupOf[p]!==undefined && groupOf[p]!==gi)
+        .map(p=>groupOf[p]);
+      if(!external.length){middle.push(id);continue;}
+      const avg=external.reduce((a,b)=>a+b,0)/external.length;
+      if(avg<gi)left.push(id);else right.push(id);
+    }
+    gr.ids=[...left,...middle,...right];
+  }
+
+  // If two neighboring family blocks are connected by a union, place the spouses
+  // exactly on the facing edges of the two blocks.
+  for(let gi=0;gi<groups.length-1;gi++){
+    const A=groups[gi],B=groups[gi+1];
+    let pair=null;
+    for(const a of A.ids){
+      const b=getPartners(a).find(x=>B.ids.includes(x)&&genMap[x]===g);
+      if(b){pair={a,b};break;}
+    }
+    if(pair){
+      A.ids=A.ids.filter(x=>x!==pair.a).concat(pair.a);
+      B.ids=[pair.b,...B.ids.filter(x=>x!==pair.b)];
+    }
+  }
+  return groups;
+}
+function card(id){
+  const p=data.people[id];
+  if(!p)return '';
+  const unions=data.unions.filter(u=>u.a===id||u.b===id).length;
+  const gender=p.gender==='male'?'male':p.gender==='female'?'female':'other';
+  const symbol=p.gender==='male'?'♂':p.gender==='female'?'♀':'•';
+  const photo=p.photo
+    ? `<img class="cardPhoto" src="${p.photo}" alt="">`
+    : `<div class="cardPhoto placeholder">${symbol}</div>`;
+  const meta=[
+    p.birth?`Né(e) : ${esc(p.birth)}`:'',
+    p.death?`Décédé(e) : ${esc(p.death)}`:''
+  ].filter(Boolean).join('<br>');
+  const toggle=collapsed.has(id)?'⊕':'⊖';
+  return `<div class="personCard ${gender} ${id===data.selectedId?'selected':''}" data-id="${id}">
+    <div class="cardTop">${photo}<div class="cardText">
+      <div class="surname">${esc(p.lastName||'')}</div>
+      <div class="firstname">${esc(p.firstName||'')}</div>
+      ${meta?`<div class="meta">${meta}</div>`:''}
+      ${unions>1?`<span class="unionCount">${unions} unions</span>`:''}
+    </div></div>
+    <button type="button" class="branchToggle" data-toggle="${id}" title="Replier ou déplier la descendance">${toggle}</button>
+  </div>`;
+}
+
+function dotId(id){return 'p_'+String(id).replace(/[^a-zA-Z0-9_]/g,'_');}
+function dotHtml(s){
+  return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function dotText(s){
+  return String(s??'')
+    .replace(/\\/g,'\\\\')
+    .replace(/"/g,'\\"')
+    .replace(/\r?\n/g,' ');
+}
+function personDotLabel(p){
+  const symbol=p.gender==='male'?'♂':p.gender==='female'?'♀':'•';
+  const lines=[
+    `${symbol} ${(p.lastName||'').toUpperCase()}`,
+    p.firstName||'',
+    p.birth?`Né(e) : ${p.birth}`:'',
+    p.death?`Décédé(e) : ${p.death}`:''
+  ].filter(Boolean);
+  return dotText(lines.join('\\n'));
+}
+function buildGenealogyDot(startId){
+  const ids=component(startId),allowed=new Set(ids),lines=[];
+  lines.push('digraph G {');
+  lines.push('graph [rankdir=TB, splines=ortho, nodesep=0.34, ranksep=0.78, bgcolor="transparent", pad=0.15, newrank=true];');
+  lines.push('node [fontname="Arial"];');
+  lines.push('edge [color="#9e816b", penwidth=1.7, arrowsize=0, arrowhead=none];');
+  ids.forEach(id=>{
+    const p=data.people[id];if(!p)return;
+    const fill=p.gender==='male'?'#dcecfb':p.gender==='female'?'#f8e2eb':'#ece7f6';
+    const border=id===data.selectedId?'#8b6b52':'#cfbcae';
+    const pen=id===data.selectedId?2.6:1.6;
+    lines.push(`${dotId(id)} [shape=box, style="rounded,filled", fillcolor="${fill}", color="${border}", penwidth=${pen}, fontname="Arial", fontsize=11, margin="0.16,0.11", label="${personDotLabel(p)}"];`);
+  });
+
+  const families=new Map();
+  ids.forEach(child=>{
+    const parents=getParents(child).filter(p=>allowed.has(p)).sort();
+    if(!parents.length)return;
+    const key=parents.join('|');
+    if(!families.has(key))families.set(key,{parents,children:[]});
+    families.get(key).children.push(child);
+  });
+  data.unions.forEach(u=>{
+    if(!allowed.has(u.a)||!allowed.has(u.b))return;
+    const parents=[u.a,u.b].sort(),key=parents.join('|');
+    if(!families.has(key))families.set(key,{parents,children:[]});
+  });
+
+  let n=0;
+  families.forEach(f=>{
+    const fam='fam_'+n++;
+    if(f.parents.length>=2){
+      const a=dotId(f.parents[0]),b=dotId(f.parents[1]);
+      lines.push(`${fam} [shape=point,width=0.055,height=0.055,label="",style=filled,color="#9e816b",fillcolor="#9e816b"];`);
+      lines.push(`{rank=same; ${a}; ${fam}; ${b};}`);
+      lines.push(`${a} -> ${fam} [dir=none,weight=100,minlen=0];`);
+      lines.push(`${fam} -> ${b} [dir=none,weight=100,minlen=0];`);
+      f.children.forEach(ch=>lines.push(`${fam} -> ${dotId(ch)} [weight=35,minlen=1];`));
+    }else if(f.parents.length===1){
+      f.children.forEach(ch=>lines.push(`${dotId(f.parents[0])} -> ${dotId(ch)} [weight=35,minlen=1];`));
+    }
+  });
+  lines.push('}');
+  return lines.join('\n');
+}
+
+function fitGraphToViewport(){
+  const vp=$('treeViewport');
+  const stage=$('treeStage');
+  const wrap=$('tree')?.querySelector('.graphvizWrap');
+  const svg=wrap?.querySelector('svg');
+  if(!vp||!stage||!wrap||!svg)return;
+
+  const vb=svg.viewBox?.baseVal;
+  let graphW=vb?.width||0, graphH=vb?.height||0;
+
+  // Fallback to original Graphviz dimensions if viewBox is absent.
+  if(!graphW||!graphH){
+    const w=parseFloat(svg.getAttribute('width'))||0;
+    const h=parseFloat(svg.getAttribute('height'))||0;
+    graphW=w;graphH=h;
+  }
+  if(!graphW||!graphH)return;
+
+  // Give the SVG and its containers explicit, stable dimensions.
+  svg.style.width=graphW+'px';
+  svg.style.height=graphH+'px';
+  svg.style.maxWidth='none';
+  svg.style.display='block';
+  wrap.style.width=graphW+'px';
+  wrap.style.height=graphH+'px';
+  $('tree').style.width=graphW+'px';
+  $('tree').style.height=graphH+'px';
+  stage.style.width=graphW+'px';
+  stage.style.height=graphH+'px';
+
+  const availW=Math.max(250,vp.clientWidth-60);
+  const availH=Math.max(250,vp.clientHeight-60);
+
+  viewScale=Math.min(1.2,Math.max(0.20,Math.min(availW/graphW,availH/graphH)));
+  panX=(vp.clientWidth-graphW*viewScale)/2;
+  panY=(vp.clientHeight-graphH*viewScale)/2;
+  if(panY<20)panY=20;
+
+  applyView();
+}
+let graphRenderToken=0, graphVizInstance=null;
+async function renderGenealogyGraph(startId){
+  const token=++graphRenderToken,tree=$('tree');
+  tree.innerHTML='<div class="loadingGraph">Construction de l’arbre…</div>';
+  try{
+    if(typeof window.Viz!=='function')throw new Error('Le moteur graphique Viz.js ne s’est pas chargé.');
+    if(!graphVizInstance)graphVizInstance=new window.Viz();
+    const dot=buildGenealogyDot(startId);
+    let svg;
+    try{svg=await graphVizInstance.renderSVGElement(dot);}
+    catch(e){graphVizInstance=new window.Viz();svg=await graphVizInstance.renderSVGElement(dot);}
+    if(token!==graphRenderToken)return;
+    tree.innerHTML='<div class="graphvizWrap"></div>';
+    tree.querySelector('.graphvizWrap').appendChild(svg);
+    // Keep Graphviz's intrinsic dimensions; fitGraphToViewport will normalize them.
+    tree.querySelectorAll('g.node').forEach(node=>{
+      const title=node.querySelector('title')?.textContent||'';
+      const match=Object.keys(data.people).find(id=>dotId(id)===title);
+      if(!match)return;
+      node.dataset.id=match;
+      node.addEventListener('click',()=>{data.selectedId=match;render();openPerson(match);});
+    });
+    requestAnimationFrame(()=>requestAnimationFrame(()=>{
+      fitGraphToViewport();
+      const svgNow=$('tree')?.querySelector('svg');
+      if(svgNow && !svgNow.viewBox?.baseVal?.width){
+        console.warn('SVG Graphviz sans viewBox exploitable');
+      }
+    }));
+  }catch(e){
+    console.error('renderGenealogyGraph',e);
+    tree.innerHTML=`<div class="graphError"><strong>Erreur d’affichage de l’arbre</strong><br>${esc(e.message||e)}</div>`;
+  }
+}
+
+function renderFamily(startId){
+  const gen=generationMap(startId),levels={};
+  Object.keys(gen).forEach(id=>(levels[gen[id]]||(levels[gen[id]]=[])).push(id));
+  const nums=Object.keys(levels).map(Number).sort((a,b)=>a-b);
+  let previousIndex={};
+  const rows=[];
+
+  for(const g of nums){
+    let groups=siblingGroupsAtLevel(levels[g]);
+    groups.sort((a,b)=>{
+      const pa=parentGroupPosition(a,previousIndex),pb=parentGroupPosition(b,previousIndex);
+      if(pa!==pb)return pa-pb;
+      return familyLabel(a.parents).localeCompare(familyLabel(b.parents),'fr');
+    });
+    groups=arrangeSpouseEdges(groups,gen,g);
+
+    const lab=g<0?`Génération ${Math.abs(g)} au-dessus`:g===0?'Génération sélectionnée':`Génération ${g} en dessous`;
+    rows.push(
+      `<div class="generationRow" data-generation="${g}"><div class="generationLabel">${lab}</div>`+
+      groups.map(gr=>{
+        const lbl=familyLabel(gr.parents);
+        return `<div class="familyUnit siblingUnit" data-family="${esc(gr.key)}">${lbl?`<div class="familyUnitLabel">${esc(lbl)}</div>`:''}${gr.ids.map(id=>card(id)).join('')}</div>`;
+      }).join('')+
+      `</div>`
+    );
+
+    previousIndex={};
+    let pos=0;
+    groups.forEach(gr=>{
+      gr.ids.forEach(id=>previousIndex[id]=pos++);
+      pos+=2;
+    });
+  }
+  return `<div class="familyGraph" id="familyGraph"><svg id="familyLines"></svg>${rows.join('')}</div>`;
+}
+function svgPath(svg,d,cls){const p=document.createElementNS('http://www.w3.org/2000/svg','path');p.setAttribute('d',d);p.setAttribute('class',cls);svg.appendChild(p);}
+function svgCircle(svg,cx,cy,r,cls){const c=document.createElementNS('http://www.w3.org/2000/svg','circle');c.setAttribute('cx',cx);c.setAttribute('cy',cy);c.setAttribute('r',r);c.setAttribute('class',cls);svg.appendChild(c);}
+function cardEl(id){return document.querySelector(`.personCard[data-id="${id}"]`);}
+function pointFor(el,gr,where){const r=el.getBoundingClientRect(),x=(r.left-gr.left)/viewScale+r.width/(2*viewScale);let y=(r.top-gr.top)/viewScale+r.height/(2*viewScale);if(where==='top')y=(r.top-gr.top)/viewScale;if(where==='bottom')y=(r.bottom-gr.top)/viewScale;return{x,y};}
+function drawFamilyLines(){
+  const graph=$('familyGraph'),svg=$('familyLines');if(!graph||!svg)return;
+  const gr=graph.getBoundingClientRect(),w=graph.scrollWidth,h=graph.scrollHeight;
+  svg.setAttribute('viewBox',`0 0 ${w} ${h}`);
+  svg.setAttribute('width',w);svg.setAttribute('height',h);svg.innerHTML='';
+
+  // 1) Lignes d'union.
+  // Si les conjoints sont réellement côte à côte, ligne directe.
+  // Sinon, la liaison passe sous les blocs afin de ne jamais traverser une fratrie.
+  data.unions.forEach(u=>{
+    const a=cardEl(u.a),b=cardEl(u.b);if(!a||!b)return;
+    const rowA=a.closest('.generationRow'),rowB=b.closest('.generationRow');
+    if(!rowA||!rowB||rowA.dataset.generation!==rowB.dataset.generation)return;
+
+    const ca=pointFor(a,gr),cb=pointFor(b,gr);
+    const ba=pointFor(a,gr,'bottom'),bb=pointFor(b,gr,'bottom');
+
+    const left=Math.min(ca.x,cb.x),right=Math.max(ca.x,cb.x);
+    const others=[...rowA.querySelectorAll('.personCard')].filter(el=>el!==a&&el!==b);
+    const hasCardBetween=others.some(el=>{
+      const p=pointFor(el,gr);
+      return p.x>left && p.x<right;
+    });
+
+    if(!hasCardBetween){
+      svgPath(svg,`M ${ca.x} ${ca.y} L ${cb.x} ${cb.y}`,'unionLine');
+      svgCircle(svg,(ca.x+cb.x)/2,(ca.y+cb.y)/2,4,'unionDot');
+    }else{
+      const y=Math.max(ba.y,bb.y)+24;
+      svgPath(svg,`M ${ba.x} ${ba.y} L ${ba.x} ${y} L ${bb.x} ${y} L ${bb.x} ${bb.y}`,'unionLine');
+      svgCircle(svg,(ba.x+bb.x)/2,y,4,'unionDot');
+    }
+  });
+
+  // 2) Descendance.
+  // IMPORTANT : aucune barre horizontale commune.
+  // Chaque enfant reçoit sa propre courbe depuis SON couple parental.
+  Object.keys(data.people).forEach(childId=>{
+    const childEl=cardEl(childId);if(!childEl)return;
+    const parents=getParents(childId).filter(id=>cardEl(id));
+    if(!parents.length)return;
+
+    const cp=pointFor(childEl,gr,'top');
+    let sx,sy;
+
+    if(parents.length>=2){
+      const a=cardEl(parents[0]),b=cardEl(parents[1]);
+      const ca=pointFor(a,gr),cb=pointFor(b,gr);
+      const ba=pointFor(a,gr,'bottom'),bb=pointFor(b,gr,'bottom');
+      sx=(ca.x+cb.x)/2;
+      sy=Math.max(ba.y,bb.y)+8;
+    }else{
+      const p=pointFor(cardEl(parents[0]),gr,'bottom');
+      sx=p.x;sy=p.y+8;
+    }
+
+    const distance=Math.max(40,cp.y-sy);
+    const bend=Math.min(90,Math.max(35,distance*.42));
+
+    // Courbe verticale douce, clairement indépendante des autres familles.
+    svgPath(
+      svg,
+      `M ${sx} ${sy} C ${sx} ${sy+bend}, ${cp.x} ${cp.y-bend}, ${cp.x} ${cp.y}`,
+      'childCurve'
+    );
+  });
+}
+function render(){
+  $('treeSelect').innerHTML=Object.values(store.trees).map(t=>`<option value="${t.id}" ${t.id===store.activeTreeId?'selected':''}>${esc(t.name)}</option>`).join('');
+  const ids=Object.keys(data.people);
+  if(!ids.length){
+    $('tree').innerHTML='<div class="treeEmpty">Aucune personne. Clique sur « + Personne ».</div>';
+  }else{
+    if(!data.selectedId||!data.people[data.selectedId])data.selectedId=ids[0];
+    renderGenealogyGraph(data.selectedId);
+  }
+  renderList();renderRelationshipSelects();
+  $('status').textContent=`${ids.length} personne(s) • ${data.unions.length} union(s)`;
+}
+function renderList(){
+  const q=$('search').value.toLowerCase();
+  const ps=Object.values(data.people).filter(p=>nameOf(p).toLowerCase().includes(q)).sort((a,b)=>nameOf(a).localeCompare(nameOf(b),'fr'));
+  $('personList').innerHTML=ps.map(p=>`<div class="personRow ${p.id===data.selectedId?'active':''}" data-id="${p.id}">${p.photo?`<img src="${p.photo}">`:''}<div class="txt">${esc(nameOf(p))}<small>${esc(p.birth||'')}</small></div></div>`).join('');
+  document.querySelectorAll('.personRow').forEach(el=>el.onclick=()=>{data.selectedId=el.dataset.id;render();centerOnPerson(el.dataset.id);});
+}
+function renderRelationshipSelects(){
+  const opts=Object.values(data.people).sort((a,b)=>nameOf(a).localeCompare(nameOf(b),'fr')).map(p=>`<option value="${p.id}">${esc(optionLabel(p))}</option>`).join('');
+  const a=$('relA').value,b=$('relB').value;$('relA').innerHTML='<option value="">Personne 1</option>'+opts;$('relB').innerHTML='<option value="">Personne 2</option>'+opts;
+  if(data.people[a])$('relA').value=a;if(data.people[b])$('relB').value=b;
+}
+
+function applyView(){$('treeStage').style.transform=`translate(${panX}px,${panY}px) scale(${viewScale})`;$('zoomReset').textContent=Math.round(viewScale*100)+'%';}
+function resetView(){viewScale=1;panX=20;panY=20;applyView();}
+function centerOnPerson(id){
+  const vp=$('treeViewport');
+  const node=[...$('tree').querySelectorAll('g.node')].find(n=>{
+    const title=n.querySelector('title')?.textContent||'';
+    return dotId(id)===title;
+  });
+  if(!node)return;
+  const nr=node.getBoundingClientRect(),vr=vp.getBoundingClientRect();
+  panX+=(vr.left+vr.width/2)-(nr.left+nr.width/2);
+  panY+=(vr.top+vr.height/2)-(nr.top+nr.height/2);
+  applyView();
+}
+function setZoom(z,cx,cy){
+  const vp=$('treeViewport'),old=viewScale;z=Math.max(.35,Math.min(1.8,z));cx=cx??vp.clientWidth/2;cy=cy??vp.clientHeight/2;
+  const wx=(cx-panX)/old,wy=(cy-panY)/old;viewScale=z;panX=cx-wx*z;panY=cy-wy*z;applyView();
+}
+
+function show(o){o.classList.add('show');document.body.style.overflow='hidden';}
+function hide(o){o.classList.remove('show');document.body.style.overflow='';}
+function updatePhotoPreview(){$('photoPreview').src=tempPhoto||'';$('photoPreview').style.visibility=tempPhoto?'visible':'hidden';}
+function compressPhoto(file){
+  return new Promise((res,rej)=>{const r=new FileReader();r.onerror=rej;r.onload=()=>{const img=new Image();img.onload=()=>{const max=500,s=Math.min(1,max/Math.max(img.width,img.height)),c=document.createElement('canvas');c.width=Math.round(img.width*s);c.height=Math.round(img.height*s);c.getContext('2d').drawImage(img,0,0,c.width,c.height);res(c.toDataURL('image/jpeg',.76));};img.src=r.result;};r.readAsDataURL(file);});
+}
+function renderUnionList(id){
+  const us=data.unions.filter(u=>u.a===id||u.b===id);
+  $('unionList').innerHTML=us.length?us.map(u=>{const pid=u.a===id?u.b:u.a,p=data.people[pid];return `<div class="unionItem"><div><strong>${esc(nameOf(p))}</strong><br><small>${esc(u.type||'Union')}${u.startDate?' • '+esc(u.startDate):''}${u.endDate?' → '+esc(u.endDate):''}</small></div><button type="button" class="small editUnionBtn" data-union="${u.id}">Modifier</button></div>`;}).join(''):'<div class="hint" style="margin-top:7px">Aucune union enregistrée.</div>';
+  document.querySelectorAll('.editUnionBtn').forEach(b=>b.onclick=()=>openUnion(b.dataset.union));
+}
+function openPerson(id){
+  editingId=id||null;const p=id?data.people[id]:null;$('personTitle').textContent=id?'Modifier : '+nameOf(p):'Ajouter une personne';
+  $('lastName').value=p?.lastName||'';$('firstName').value=p?.firstName||'';$('birth').value=p?.birth||'';$('gender').value=p?.gender||'female';$('death').value=p?.death||'';$('notes').value=p?.notes||'';
+  tempPhoto=p?.photo||'';updatePhotoPreview();$('relationsBox').style.display=id?'block':'none';$('btnDelete').style.display=id?'inline-block':'none';if(id)renderUnionList(id);show($('personOverlay'));
+}
+function savePerson(){
+  const first=$('firstName').value.trim();if(!first){alert('Indique au moins un prénom.');return;}const id=editingId||uid(),old=data.people[id]||{};
+  data.people[id]={...old,id,lastName:$('lastName').value.trim(),firstName:first,birth:$('birth').value.trim(),gender:$('gender').value,death:$('death').value.trim(),photo:tempPhoto,notes:$('notes').value.trim()};
+  data.selectedId=id;hide($('personOverlay'));save();centerOnPerson(id);
+}
+function openRelation(mode){
+  if(!editingId)return;relationMode=mode;relationSource=editingId;hide($('personOverlay'));$('relationTitle').textContent=mode==='parent'?'Ajouter un parent':mode==='partner'?'Ajouter un conjoint / remariage':'Ajouter un enfant';
+  const options=Object.values(data.people).filter(p=>p.id!==relationSource).sort((a,b)=>nameOf(a).localeCompare(nameOf(b),'fr')).map(p=>`<option value="${p.id}">${esc(optionLabel(p))}</option>`).join('');
+  $('existing').innerHTML='<option value="">— Créer une nouvelle personne —</option>'+options;$('relLast').value='';$('relFirst').value='';$('relBirth').value='';$('relGender').value='female';
+  const child=mode==='child',partner=mode==='partner';$('otherParentBox').style.display=child?'flex':'none';
+  ['unionTypeField','unionStartField','unionEndField'].forEach(id=>$(id).classList.toggle('show',partner));
+  if(child){const ps=getPartners(relationSource);$('otherParent').innerHTML='<option value="">— Aucun / inconnu —</option>'+ps.map(id=>`<option value="${id}">${esc(optionLabel(data.people[id]))}</option>`).join('');}
+  show($('relationOverlay'));
+}
+function saveRelation(){
+  let target=$('existing').value;
+  let createdNow=false;
+  if(!target){
+    const first=$('relFirst').value.trim();
+    if(!first){alert('Choisis une personne existante ou indique un prénom.');return;}
+    target=uid();createdNow=true;
+    data.people[target]={id:target,lastName:$('relLast').value.trim(),firstName:first,birth:$('relBirth').value.trim(),gender:$('relGender').value,death:'',photo:'',notes:''};
+  }
+
+  if(relationMode==='parent'){
+    if(wouldCreateParentCycle(target,relationSource)){
+      if(createdNow)delete data.people[target];
+      alert('Ce lien créerait une boucle généalogique : cette personne ne peut pas être enregistrée comme parent ici.');
+      return;
+    }
+    if(!data.parentLinks.some(x=>x.parent===target&&x.child===relationSource))
+      data.parentLinks.push({parent:target,child:relationSource});
+
+    // Si l'enfant possède déjà un autre parent, les deux coparents sont placés
+    // sur le même niveau. Cela ne modifie pas leurs liens biologiques.
+    getParents(relationSource).filter(id=>id!==target).forEach(id=>{
+      if(!directGenerationConflict(id,target))ensureUnion(id,target,{type:'Parents / autre'});
+    });
+
+  }else if(relationMode==='partner'){
+    if(directGenerationConflict(relationSource,target)){
+      if(createdNow)delete data.people[target];
+      alert('Ces deux personnes sont déjà reliées comme ascendant et descendant. Les déclarer conjointes rendrait les générations incohérentes.');
+      return;
+    }
+    ensureUnion(relationSource,target,{
+      type:$('unionType').value,
+      startDate:$('unionStart').value.trim(),
+      endDate:$('unionEnd').value.trim()
+    });
+
+  }else if(relationMode==='child'){
+    if(wouldCreateParentCycle(relationSource,target)){
+      if(createdNow)delete data.people[target];
+      alert('Ce lien créerait une boucle généalogique : cette personne ne peut pas être enregistrée comme enfant ici.');
+      return;
+    }
+    if(!data.parentLinks.some(x=>x.parent===relationSource&&x.child===target))
+      data.parentLinks.push({parent:relationSource,child:target});
+
+    const other=$('otherParent').value;
+    if(other){
+      if(wouldCreateParentCycle(other,target)){
+        if(createdNow)delete data.people[target];
+        data.parentLinks=data.parentLinks.filter(x=>!(x.parent===relationSource&&x.child===target));
+        alert('Le second parent choisi créerait une boucle généalogique.');
+        return;
+      }
+      if(!data.parentLinks.some(x=>x.parent===other&&x.child===target))
+        data.parentLinks.push({parent:other,child:target});
+      if(!directGenerationConflict(relationSource,other))
+        ensureUnion(relationSource,other,{type:'Parents / autre'});
+    }
+  }
+
+  data.selectedId=relationSource;
+  hide($('relationOverlay'));
+  save();
+}
+
+function batchChildRowHtml(){
+  return `<div class="batchChildRow">
+    <div class="field"><label>Nom</label><input class="batchLast"></div>
+    <div class="field"><label>Prénom *</label><input class="batchFirst"></div>
+    <div class="field"><label>Date de naissance</label><input class="batchBirth" placeholder="JJ/MM/AAAA"></div>
+    <div class="field"><label>Sexe</label><select class="batchGender">
+      <option value="female">Femme</option><option value="male">Homme</option><option value="other">Autre / non précisé</option>
+    </select></div>
+    <button type="button" class="danger removeBatchRow">Supprimer</button>
+  </div>`;
+}
+function bindBatchRows(){
+  document.querySelectorAll('#batchChildrenList .removeBatchRow').forEach(btn=>{
+    btn.onclick=()=>{
+      if(document.querySelectorAll('#batchChildrenList .batchChildRow').length<=1){
+        alert('Il faut conserver au moins une ligne.'); return;
+      }
+      btn.closest('.batchChildRow').remove();
+    };
+  });
+}
+function openChildrenBatch(){
+  if(!editingId)return;
+  relationSource=editingId;
+  const source=data.people[relationSource];
+  const partners=getPartners(relationSource);
+  hide($('personOverlay'));
+  $('childrenBatchTitle').textContent='Ajouter plusieurs enfants à '+nameOf(source);
+  $('batchOtherParent').innerHTML='<option value="">— Parent non précisé —</option>'+
+    partners.map(id=>`<option value="${id}">${esc(optionLabel(data.people[id]))}</option>`).join('');
+  $('batchChildrenList').innerHTML=batchChildRowHtml()+batchChildRowHtml();
+  bindBatchRows();
+  show($('childrenBatchOverlay'));
+}
+async function saveChildrenBatch(){
+  if(!relationSource||!data.people[relationSource])return;
+  const other=$('batchOtherParent').value;
+  const rows=[...document.querySelectorAll('#batchChildrenList .batchChildRow')];
+  const entries=[];
+
+  for(const row of rows){
+    const last=row.querySelector('.batchLast').value.trim();
+    const first=row.querySelector('.batchFirst').value.trim();
+    const birth=row.querySelector('.batchBirth').value.trim();
+    const gender=row.querySelector('.batchGender').value;
+    if(!last&&!first&&!birth)continue;
+    if(!first){
+      alert('Indique le prénom de chaque enfant.');
+      row.querySelector('.batchFirst').focus();
+      return;
+    }
+    entries.push({last,first,birth,gender});
+  }
+  if(!entries.length){alert('Encode au moins un enfant.');return;}
+
+  const newIds=[];
+  for(const e of entries){
+    const id=uid('p');
+    newIds.push(id);
+    data.people[id]={
+      id,lastName:e.last,firstName:e.first,birth:e.birth,
+      gender:e.gender,death:'',photo:'',notes:''
+    };
+    data.parentLinks.push({parent:relationSource,child:id});
+    if(other)data.parentLinks.push({parent:other,child:id});
+  }
+
+  if(other && !unionBetween(relationSource,other)){
+    ensureUnion(relationSource,other,{type:'Parents / autre'});
+  }
+
+  data.selectedId=relationSource;
+  const tree=store.trees[store.activeTreeId];
+  tree.data=data;
+  tree.savedAt=Date.now();
+  persistLocal();
+  render();
+  hide($('childrenBatchOverlay'));
+
+  if(currentUser){
+    setSyncStatus('Enregistrement des enfants…','syncBusy');
+    const ok=await pushAllTrees();
+    if(ok){
+      alert(entries.length+' enfant(s) ajouté(s) et sauvegardé(s) en ligne avec succès.');
+    }else{
+      alert('Les enfants sont enregistrés sur cet appareil, mais la sauvegarde en ligne a échoué. Ne les réencode pas : clique sur « Synchroniser maintenant » après avoir corrigé l’erreur.');
+    }
+  }else{
+    alert(entries.length+' enfant(s) ajouté(s) sur cet appareil. Connecte-toi pour les synchroniser en ligne.');
+  }
+}
+function openUnion(id){
+  const u=data.unions.find(x=>x.id===id);if(!u)return;editingUnionId=id;const other=u.a===editingId?u.b:u.a;$('unionTitle').textContent='Union avec '+nameOf(data.people[other]);$('editUnionType').value=u.type||'Parents / autre';$('editUnionStart').value=u.startDate||'';$('editUnionEnd').value=u.endDate||'';show($('unionOverlay'));
+}
+function saveUnion(){
+  const u=data.unions.find(x=>x.id===editingUnionId);if(!u)return;u.type=$('editUnionType').value;u.startDate=$('editUnionStart').value.trim();u.endDate=$('editUnionEnd').value.trim();hide($('unionOverlay'));save();if(editingId)renderUnionList(editingId);
+}
+
+function ancestorDistances(id){
+  const m=new Map(),q=[[id,0]];while(q.length){const [x,d]=q.shift();if(m.has(x)&&m.get(x)<=d)continue;m.set(x,d);getParents(x).forEach(p=>q.push([p,d+1]));}return m;
+}
+function genderWord(id,m,f,n='parent'){const g=data.people[id]?.gender;return g==='male'?m:g==='female'?f:n;}
+function ancestorLabel(id,d){if(d===1)return genderWord(id,'père','mère','parent');if(d===2)return genderWord(id,'grand-père','grand-mère','grand-parent');return (d-2)+'× arrière-'+genderWord(id,'grand-père','grand-mère','grand-parent');}
+function descendantLabel(id,d){if(d===1)return genderWord(id,'fils','fille','enfant');if(d===2)return genderWord(id,'petit-fils','petite-fille','petit-enfant');return (d-2)+'× arrière-'+genderWord(id,'petit-fils','petite-fille','descendant');}
+function relationLabel(a,b){
+  if(!a||!b)return 'Sélectionne deux personnes.';if(a===b)return 'Il s’agit de la même personne.';
+  if(unionBetween(a,b))return nameOf(data.people[a])+' est le/la conjoint(e) de '+nameOf(data.people[b])+'.';
+  const aa=ancestorDistances(a),bb=ancestorDistances(b);
+  if(bb.has(a))return nameOf(data.people[a])+' est '+ancestorLabel(a,bb.get(a))+' de '+nameOf(data.people[b])+'.';
+  if(aa.has(b))return nameOf(data.people[a])+' est '+descendantLabel(a,aa.get(b))+' de '+nameOf(data.people[b])+'.';
+  const shared=getParents(a).filter(x=>getParents(b).includes(x));
+  if(shared.length)return nameOf(data.people[a])+' est '+genderWord(a,'frère','sœur','frère/sœur')+(shared.length===1?' (demi-fratrie)':'')+' de '+nameOf(data.people[b])+'.';
+  let best=null;for(const [anc,da] of aa){if(anc===a)continue;if(bb.has(anc)){const db=bb.get(anc);if(!best||da+db<best.da+best.db)best={anc,da,db};}}
+  if(!best)return 'Aucun lien de parenté biologique direct n’a été trouvé dans les données encodées.';
+  if(best.da===1&&best.db>=2)return nameOf(data.people[a])+' est '+genderWord(a,'oncle','tante','oncle/tante')+' de '+nameOf(data.people[b])+'.';
+  if(best.db===1&&best.da>=2)return nameOf(data.people[a])+' est '+genderWord(a,'neveu','nièce','neveu/nièce')+' de '+nameOf(data.people[b])+'.';
+  const degree=Math.min(best.da,best.db)-1,removed=Math.abs(best.da-best.db);
+  if(degree===1&&removed===0)return 'Ils sont cousins germains.';
+  return `Ils sont cousins au ${degree}e degré${removed?`, avec ${removed} génération(s) d’écart`:''}.`;
+}
+
+
+function checkTreeIntegrity(){
+  const problems=[];
+  data.parentLinks.forEach(l=>{
+    if(!data.people[l.parent]||!data.people[l.child])problems.push('Lien parent-enfant vers une personne inexistante.');
+    if(l.parent===l.child)problems.push('Une personne est enregistrée comme son propre parent.');
+    if(data.people[l.parent]&&data.people[l.child]&&isDescendantOf(l.parent,l.child))
+      problems.push(nameOf(data.people[l.parent])+' apparaît à la fois comme ascendant et descendant de '+nameOf(data.people[l.child])+'.');
+  });
+  data.unions.forEach(u=>{
+    if(!data.people[u.a]||!data.people[u.b])problems.push('Union vers une personne inexistante.');
+    else if(directGenerationConflict(u.a,u.b))
+      problems.push(nameOf(data.people[u.a])+' et '+nameOf(data.people[u.b])+' sont déclarés conjoints alors qu’un lien ascendant-descendant existe entre eux.');
+  });
+  const duplicates=new Set();
+  data.parentLinks.forEach(l=>{const k=l.parent+'>'+l.child;if(duplicates.has(k))problems.push('Un lien parent-enfant est enregistré deux fois.');duplicates.add(k);});
+  if(!problems.length){
+    alert('Vérification terminée : aucun lien incohérent détecté dans cet arbre.');
+  }else{
+    alert('Vérification terminée. '+problems.length+' anomalie(s) détectée(s) :\n\n• '+[...new Set(problems)].join('\n• '));
+  }
+}
+
+function printTree(full){
+  printRestoreCollapsed=new Set(collapsed);if(full)collapsed.clear();render();resetView();
+  setTimeout(()=>window.print(),350);
+}
+window.addEventListener('afterprint',()=>{if(printRestoreCollapsed){collapsed=new Set(printRestoreCollapsed);printRestoreCollapsed=null;render();}});
+
+$('btnLogin').onclick=login;$('btnLogout').onclick=logout;$('btnSync').onclick=syncBothWays;
+sb.auth.onAuthStateChange((e,s)=>{currentUser=s?.user||null;setTimeout(refreshAuthUI,0);});
+$('treeSelect').onchange=function(){switchTree(this.value)};$('btnNewTree').onclick=newTree;$('btnRenameTree').onclick=renameTree;$('btnDeleteTree').onclick=deleteTree;
+$('btnNew').onclick=()=>openPerson(null);$('btnSavePerson').onclick=savePerson;$('btnCancelPerson').onclick=$('closePerson').onclick=()=>hide($('personOverlay'));
+$('btnParent').onclick=()=>openRelation('parent');$('btnPartner').onclick=()=>openRelation('partner');$('btnChild').onclick=()=>openRelation('child');$('btnChildrenBatch').onclick=openChildrenBatch;
+$('btnSaveRelation').onclick=saveRelation;$('btnCancelRelation').onclick=$('closeRelation').onclick=()=>hide($('relationOverlay'));
+$('addBatchChildRow').onclick=()=>{$('batchChildrenList').insertAdjacentHTML('beforeend',batchChildRowHtml());bindBatchRows();};
+$('saveChildrenBatch').onclick=saveChildrenBatch;
+$('cancelChildrenBatch').onclick=$('closeChildrenBatch').onclick=()=>hide($('childrenBatchOverlay'));
+$('saveUnion').onclick=saveUnion;$('cancelUnion').onclick=$('closeUnion').onclick=()=>hide($('unionOverlay'));
+$('removeUnion').onclick=()=>{if(!editingUnionId)return;if(confirm('Supprimer uniquement ce lien d’union ? Les personnes et les liens parent-enfant resteront enregistrés.')){data.unions=data.unions.filter(u=>u.id!==editingUnionId);hide($('unionOverlay'));save();}};
+$('btnDelete').onclick=()=>{if(!editingId)return;const p=data.people[editingId];if(!confirm('Supprimer '+nameOf(p)+' et ses liens familiaux ?'))return;delete data.people[editingId];data.parentLinks=data.parentLinks.filter(x=>x.parent!==editingId&&x.child!==editingId);data.unions=data.unions.filter(u=>u.a!==editingId&&u.b!==editingId);data.selectedId=Object.keys(data.people)[0]||null;hide($('personOverlay'));save();};
+$('photoFile').onchange=async function(){const f=this.files?.[0];if(f){tempPhoto=await compressPhoto(f);updatePhotoPreview();}this.value='';};
+$('removePhoto').onclick=()=>{tempPhoto='';updatePhotoPreview();};
+$('search').oninput=renderList;
+$('btnRelationship').onclick=()=>{$('relationshipResult').textContent=relationLabel($('relA').value,$('relB').value);};
+$('zoomIn').onclick=()=>setZoom(viewScale+.15);$('zoomOut').onclick=()=>setZoom(viewScale-.15);$('zoomReset').onclick=fitGraphToViewport;$('centerSelected').onclick=()=>centerOnPerson(data.selectedId);
+$('btnPrintVisible').onclick=()=>printTree(false);$('btnPrintFull').onclick=()=>printTree(true);$('btnCheckTree').onclick=checkTreeIntegrity;
+
+$('btnExport').onclick=()=>{const blob=new Blob([JSON.stringify({treeName:treeName(),data:data},null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=treeName().replace(/[^a-z0-9_-]+/gi,'-')+'.json';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);};
+$('fileImport').onchange=function(){const f=this.files?.[0];if(!f)return;const r=new FileReader();r.onload=()=>{try{const o=JSON.parse(r.result),d=normalizeData(o.data&&o.data.people?o.data:o);if(!d.people||!Array.isArray(d.parentLinks)||!Array.isArray(d.unions))throw 0;data=d;store.trees[store.activeTreeId].data=data;if(o.treeName)store.trees[store.activeTreeId].name=o.treeName;save();}catch(e){alert('Fichier non valide.');}};r.readAsText(f);this.value='';};
+
+const vp=$('treeViewport');
+vp.addEventListener('pointerdown',e=>{if(e.target.closest('.personCard')||e.target.closest('button'))return;isPanning=true;startPan={x:e.clientX,y:e.clientY,px:panX,py:panY};vp.classList.add('dragging');vp.setPointerCapture(e.pointerId);});
+vp.addEventListener('pointermove',e=>{if(!isPanning)return;panX=startPan.px+e.clientX-startPan.x;panY=startPan.py+e.clientY-startPan.y;applyView();});
+vp.addEventListener('pointerup',()=>{isPanning=false;vp.classList.remove('dragging');});
+vp.addEventListener('wheel',e=>{e.preventDefault();const r=vp.getBoundingClientRect();setZoom(viewScale*(e.deltaY<0?1.1:.9),e.clientX-r.left,e.clientY-r.top);},{passive:false});
+
+window.addEventListener('resize',()=>{if($('tree')?.querySelector('.graphvizWrap'))fitGraphToViewport();});
+window.addEventListener('focus',()=>{if(currentUser)syncBothWays();});
+document.addEventListener('visibilitychange',()=>{if(!document.hidden&&currentUser)syncBothWays();});
+
+render();resetView();refreshAuthUI();
+})();
+</script>
+</body>
+</html>
