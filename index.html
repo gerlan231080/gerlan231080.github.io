@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Mon arbre généalogique – V6.9.4</title>
+<title>Mon arbre généalogique – V6.9.5</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 :root{
@@ -140,7 +140,7 @@ label{font-size:12px;font-weight:700;color:#665d56}
 <body>
 
 <header>
-  <h1>🌳 Mon arbre généalogique <small style="font-weight:500;color:#756b63">V6.9.4</small></h1>
+  <h1>🌳 Mon arbre généalogique <small style="font-weight:500;color:#756b63">V6.9.5</small></h1>
   <button class="primary" id="btnNew">+ Personne</button><button id="btnChildrenBatchTop">👨‍👩‍👧‍👦 Plusieurs enfants</button>
   <button id="btnPrintVisible">🖨️ Imprimer la branche</button>
   <button id="btnPrintFull">🖨️ Imprimer l’arbre complet</button><button id="btnCheckTree">✓ Vérifier les liens</button>
@@ -824,7 +824,7 @@ function buildPedigreeLayout(startId){
   let canvasW=1200;
 
   /*
-    RÈGLE PRINCIPALE V6.9.4
+    RÈGLE PRINCIPALE V6.9.5
     =======================
     Chaque nouvelle génération est ordonnée APRÈS que la génération parente
     a été réellement positionnée.
@@ -968,6 +968,107 @@ function buildPedigreeLayout(startId){
     }
   }
 
+
+  /*
+    V6.9.5 — PASSE FINALE DÉTERMINISTE
+    ----------------------------------
+    On ne se contente plus de "rapprocher" les descendants de leurs parents.
+    Pour CHAQUE génération, on reconstruit les blocs familiaux puis on impose
+    leur ordre gauche->droite selon l'ordre réel des parents au niveau supérieur.
+
+    Conséquence : deux familles ne peuvent plus être entrelacées sur une ligne,
+    donc leurs lignes de descendance ne sont plus obligées de se croiser.
+  */
+  gens.forEach(g=>{
+    const groups=pedigreeSiblingGroups(levels[g]||[],allowed);
+    const blocks=pedigreeVisualBlocks(groups,gen,g);
+
+    blocks.forEach((bl,bi)=>{
+      bl._oldX=Math.min(...bl.groups.flatMap(gr=>gr.ids.map(id=>pos[id]?.x??1e12)));
+      bl.groups.forEach(gr=>{
+        gr.width=gr.ids.length*PED_CARD_W+Math.max(0,gr.ids.length-1)*PED_INNER_GAP;
+        const par=[...new Set(gr.parents)].filter(p=>pos[p]);
+        const vals=par.map(p=>pos[p].x+PED_CARD_W/2);
+        gr.anchor=vals.length?vals.reduce((a,b)=>a+b,0)/vals.length:null;
+      });
+
+      // À l'intérieur d'un mariage entre deux branches, la branche dont
+      // les parents sont à gauche reste à gauche.
+      bl.groups.sort((A,B)=>{
+        if(A.anchor!==null&&B.anchor!==null&&Math.abs(A.anchor-B.anchor)>1)return A.anchor-B.anchor;
+        if(A.anchor!==null&&B.anchor===null)return -1;
+        if(A.anchor===null&&B.anchor!==null)return 1;
+        const ax=Math.min(...A.ids.map(id=>pos[id]?.x??1e12));
+        const bx=Math.min(...B.ids.map(id=>pos[id]?.x??1e12));
+        return ax-bx;
+      });
+
+      // Le conjoint est placé sur le bord faisant face à l'autre groupe.
+      if(bl.groups.length===2){
+        const A=bl.groups[0],B=bl.groups[1];
+        let pair=null;
+        for(const a of A.ids){
+          const b=getPartners(a).find(x=>B.ids.includes(x)&&(gen[x]??0)===g);
+          if(b){pair={a,b};break;}
+        }
+        if(pair){
+          A.ids=[...A.ids.filter(x=>x!==pair.a),pair.a];
+          B.ids=[pair.b,...B.ids.filter(x=>x!==pair.b)];
+        }
+      }
+
+      bl.width=bl.groups.reduce((s,gr)=>s+gr.width,0)
+        +Math.max(0,bl.groups.length-1)*PED_INNER_GAP;
+
+      const anchors=bl.groups.map(gr=>gr.anchor).filter(v=>v!==null);
+      bl.anchor=anchors.length?anchors.reduce((a,b)=>a+b,0)/anchors.length:null;
+      bl.sortKey=bl.anchor!==null?bl.anchor:bl._oldX;
+      bl._bi=bi;
+    });
+
+    // Règle absolue : ordre de la génération = ordre de ses ascendants.
+    blocks.sort((A,B)=>A.sortKey-B.sortKey || A._oldX-B._oldX || A._bi-B._bi);
+
+    // Position idéale de chaque bloc sous ses parents.
+    blocks.forEach(bl=>{
+      bl.ideal=Math.max(PED_LEFT,(bl.anchor!==null?bl.anchor:bl._oldX+bl.width/2)-bl.width/2);
+      bl.start=bl.ideal;
+    });
+
+    // Empêche tout chevauchement SANS changer l'ordre des familles.
+    for(let i=1;i<blocks.length;i++){
+      const min=blocks[i-1].start+blocks[i-1].width+PED_CLUSTER_GAP;
+      if(blocks[i].start<min)blocks[i].start=min;
+    }
+
+    // Resserre vers la gauche lorsque c'est possible, toujours sans changer l'ordre.
+    for(let pass=0;pass<3;pass++){
+      for(let i=blocks.length-2;i>=0;i--){
+        const max=blocks[i+1].start-PED_CLUSTER_GAP-blocks[i].width;
+        if(blocks[i].start>blocks[i].ideal)blocks[i].start=Math.max(blocks[i].ideal,Math.min(blocks[i].start,max));
+      }
+      for(let i=1;i<blocks.length;i++){
+        const min=blocks[i-1].start+blocks[i-1].width+PED_CLUSTER_GAP;
+        if(blocks[i].start<min)blocks[i].start=min;
+      }
+    }
+
+    // Réécrit réellement les X des cartes.
+    blocks.forEach(bl=>{
+      let x=bl.start;
+      bl.groups.forEach((gr,gi)=>{
+        gr.ids.forEach((id,i)=>{
+          if(pos[id])pos[id].x=x+i*(PED_CARD_W+PED_INNER_GAP);
+        });
+        x+=gr.width+(gi<bl.groups.length-1?PED_INNER_GAP:0);
+      });
+    });
+  });
+
+  // Recalcule la largeur après la passe finale.
+  const finalXs=Object.values(pos).map(p=>p.x+PED_CARD_W);
+  canvasW=Math.max(1200,(finalXs.length?Math.max(...finalXs):1000)+PED_LEFT);
+
   const canvasH=PED_TOP+gens.length*PED_ROW_STEP+80;
   return {ids,gen,gens,levels,pos,canvasW,canvasH};
 }
@@ -1005,7 +1106,7 @@ function drawPedigreeLines(layout){
   const path=(d,cls)=>{const p=document.createElementNS(NS,'path');p.setAttribute('d',d);p.setAttribute('class',cls);svg.appendChild(p);};
   const circle=(cx,cy)=>{const c=document.createElementNS(NS,'circle');c.setAttribute('cx',cx);c.setAttribute('cy',cy);c.setAttribute('r',4);c.setAttribute('class','unionDot');svg.appendChild(c);};
 
-  // Unions : simple liaison horizontale entre conjoints.
+  // Couples : uniquement la petite liaison entre les deux cartes.
   data.unions.forEach(u=>{
     const A=layout.pos[u.a],B=layout.pos[u.b];if(!A||!B||A.g!==B.g)return;
     const left=A.x<=B.x?A:B,right=A.x<=B.x?B:A;
@@ -1015,102 +1116,68 @@ function drawPedigreeLines(layout){
   });
 
   /*
-    RÈGLE ABSOLUE 3 :
-    aucune ligne de descendance d'une famille ne doit se confondre avec celle
-    d'une autre. Chaque famille reçoit :
-      - un tronc vertical propre ;
-      - une hauteur de barre de fratrie propre ;
-      - si nécessaire, un léger décalage horizontal de tronc.
+    V6.9.5 :
+    une famille = un seul couloir local situé ENTRE ses parents et ses enfants.
+    La barre horizontale ne s'étend JAMAIS au-delà des enfants de cette famille.
+    Le tronc venant des parents rejoint le point le plus proche de cette barre.
+    Cela évite qu'une grande ligne traverse les descendances voisines.
   */
-  const fams=pedigreeFamilySets(layout).map((f,idx)=>{
-    const children=f.children.filter(c=>layout.pos[c]).sort((a,b)=>layout.pos[a].x-layout.pos[b].x);
-    const parents=f.parents.filter(p=>layout.pos[p]);
-    if(!children.length||!parents.length)return null;
+  const fams=pedigreeFamilySets(layout).map((fam,idx)=>{
+    const parents=fam.parents.filter(p=>layout.pos[p]);
+    const children=fam.children.filter(c=>layout.pos[c])
+      .sort((a,b)=>layout.pos[a].x-layout.pos[b].x);
+    if(!parents.length||!children.length)return null;
 
-    const parentCenters=parents.map(p=>layout.pos[p].x+PED_CARD_W/2);
-    const childCenters=children.map(c=>layout.pos[c].x+PED_CARD_W/2);
+    const childXs=children.map(c=>layout.pos[c].x+PED_CARD_W/2);
+    const minChild=Math.min(...childXs),maxChild=Math.max(...childXs);
+    const parentXs=parents.map(p=>layout.pos[p].x+PED_CARD_W/2);
+    const parentX=parentXs.reduce((a,b)=>a+b,0)/parentXs.length;
     const py=Math.max(...parents.map(p=>layout.pos[p].y+PED_CARD_H));
     const cy=Math.min(...children.map(c=>layout.pos[c].y));
-    const originBase=parentCenters.reduce((a,b)=>a+b,0)/parentCenters.length;
-    const minChild=Math.min(...childCenters),maxChild=Math.max(...childCenters);
-
-    return {
-      idx,f,children,parents,py,cy,
-      originBase,originX:originBase,childCenters,
-      minChild,maxChild,
-      minX:Math.min(originBase,minChild),
-      maxX:Math.max(originBase,maxChild),
-      g:layout.pos[parents[0]].g
-    };
+    const trunkX=Math.max(minChild,Math.min(maxChild,parentX));
+    return {idx,parents,children,childXs,minChild,maxChild,parentX,trunkX,py,cy,g:layout.pos[parents[0]].g};
   }).filter(Boolean);
 
-  const byGen=new Map();
-  fams.forEach(f=>{if(!byGen.has(f.g))byGen.set(f.g,[]);byGen.get(f.g).push(f);});
+  // Les rares familles dont les intervalles horizontaux se recouvrent
+  // reçoivent des hauteurs distinctes, sans créer de longs détours.
+  const byGap=new Map();
+  fams.forEach(f=>{
+    const key=`${f.g}`;
+    if(!byGap.has(key))byGap.set(key,[]);
+    byGap.get(key).push(f);
+  });
 
-  byGen.forEach(items=>{
-    // Attribue des couloirs horizontaux distincts.
-    items.sort((a,b)=>{
-      const aw=a.maxX-a.minX,bw=b.maxX-b.minX;
-      if(aw!==bw)return aw-bw;
-      return a.originBase-b.originBase;
-    });
-
+  byGap.forEach(items=>{
+    items.sort((a,b)=>a.minChild-b.minChild || a.maxChild-b.maxChild);
     const lanes=[];
-    items.forEach(item=>{
+    items.forEach(f=>{
       let lane=0;
-      while(true){
-        const occupied=lanes[lane]||[];
-        const conflict=occupied.some(iv=>!(item.maxX+30<iv.minX || item.minX-30>iv.maxX));
-        if(!conflict)break;
-        lane++;
-      }
+      while(lanes[lane]?.some(x=>!(f.maxChild+12<x.min || f.minChild-12>x.max)))lane++;
       if(!lanes[lane])lanes[lane]=[];
-      lanes[lane].push({minX:item.minX,maxX:item.maxX});
-      item.lane=lane;
+      lanes[lane].push({min:f.minChild,max:f.maxChild});
+      f.lane=lane;
     });
 
-    /*
-      Réserve aussi des colonnes de tronc distinctes si deux familles partent
-      presque du même X. Cela évite deux verticales superposées.
-    */
-    const trunkXs=[];
-    items.forEach(item=>{
-      let x=item.originBase;
-      let attempt=0;
-      while(trunkXs.some(v=>Math.abs(v-x)<18) && attempt<10){
-        const dir=attempt%2===0?1:-1;
-        x=item.originBase+dir*(18+Math.floor(attempt/2)*18);
-        attempt++;
-      }
-      trunkXs.push(x);
-      item.originX=x;
-      item.minX=Math.min(item.originX,item.minChild);
-      item.maxX=Math.max(item.originX,item.maxChild);
-    });
+    items.forEach(f=>{
+      const free=Math.max(70,f.cy-f.py);
+      const laneStep=Math.min(34,Math.max(22,(free-50)/Math.max(1,lanes.length)));
+      const busY=Math.min(f.cy-28,f.py+28+f.lane*laneStep);
 
-    items.forEach(item=>{
-      const gap=Math.max(60,item.cy-item.py);
-      const laneStep=Math.min(40,Math.max(26,(gap-48)/Math.max(1,lanes.length)));
-      let busY=item.py+30+item.lane*laneStep;
-      busY=Math.min(busY,item.cy-30);
+      // Descente depuis le milieu des parents / du couple.
+      path(`M ${f.parentX} ${f.py} L ${f.parentX} ${f.py+14}`,'descentLine');
 
-      // Tronc parental propre.
-      path(`M ${item.originBase} ${item.py} L ${item.originBase} ${item.py+14}`,'descentLine');
-      if(Math.abs(item.originX-item.originBase)>1){
-        path(`M ${item.originBase} ${item.py+14} L ${item.originX} ${item.py+14}`,'descentLine');
-      }
-      path(`M ${item.originX} ${item.py+14} L ${item.originX} ${busY}`,'descentLine');
+      // Petit déplacement horizontal local seulement si nécessaire.
+      if(Math.abs(f.parentX-f.trunkX)>1)
+        path(`M ${f.parentX} ${f.py+14} L ${f.trunkX} ${f.py+14}`,'descentLine');
 
-      // Barre de fratrie de CETTE famille uniquement.
-      const barMin=Math.min(item.originX,item.minChild);
-      const barMax=Math.max(item.originX,item.maxChild);
-      if(barMax-barMin>1){
-        path(`M ${barMin} ${busY} L ${barMax} ${busY}`,'descentLine');
-      }
+      path(`M ${f.trunkX} ${f.py+14} L ${f.trunkX} ${busY}`,'descentLine');
 
-      // Une verticale indépendante vers chaque enfant.
-      item.children.forEach((c,i)=>{
-        const x=item.childCenters[i];
+      // Barre de fratrie limitée strictement aux enfants concernés.
+      if(f.maxChild-f.minChild>1)
+        path(`M ${f.minChild} ${busY} L ${f.maxChild} ${busY}`,'descentLine');
+
+      f.children.forEach((c,i)=>{
+        const x=f.childXs[i];
         path(`M ${x} ${busY} L ${x} ${layout.pos[c].y}`,'descentLine');
       });
     });
