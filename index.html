@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Mon arbre généalogique – V7.3.1</title>
+<title>Mon arbre généalogique – V7.3.2</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 :root{
@@ -136,11 +136,12 @@ label{font-size:12px;font-weight:700;color:#665d56}
 .pedigreeCanvas .unionDot{fill:#9e816b}
 
 </style>
+<!-- MOTEUR_LAYOUT: TOP_DOWN_STABLE_V732 -->
 </head>
 <body>
 
 <header>
-  <h1>🌳 Mon arbre généalogique <small style="font-weight:500;color:#756b63">V7.3.1</small></h1>
+  <h1>🌳 Mon arbre généalogique <small style="font-weight:500;color:#756b63">V7.3.2</small></h1>
   <button class="primary" id="btnNew">+ Personne</button><button id="btnChildrenBatchTop">👨‍👩‍👧‍👦 Plusieurs enfants</button>
   <button id="btnPrintVisible">🖨️ Imprimer la branche</button>
   <button id="btnPrintFull">🖨️ Imprimer l’arbre complet</button><button id="btnCheckTree">✓ Vérifier les liens</button>
@@ -874,10 +875,9 @@ function buildPedigreeLayout(startId){
 
   const unitsByGen={},unitOf={};
 
-  // 1) Chaque couple / union devient un bloc indivisible.
+  // Un couple reste toujours un bloc indivisible.
   gens.forEach(g=>{
-    const idsHere=levels[g]||[];
-    const setHere=new Set(idsHere),adj={};
+    const idsHere=levels[g]||[],setHere=new Set(idsHere),adj={};
     idsHere.forEach(id=>adj[id]=new Set());
 
     data.unions.forEach(u=>{
@@ -894,84 +894,108 @@ function buildPedigreeLayout(startId){
         const x=q.shift();members.push(x);
         [...adj[x]].forEach(n=>{if(!seen.has(n)){seen.add(n);q.push(n);}});
       }
-
       if(members.length===2){
         const a=data.people[members[0]],b=data.people[members[1]];
         if(a?.gender==='female'&&b?.gender==='male')members.reverse();
       }
-
       const u={
-        id:'U'+g+'_'+units.length,
-        g,
-        members,
+        id:`U${g}_${units.length}`,g,members,
         width:members.length*PED_CARD_W+Math.max(0,members.length-1)*PED_INNER_GAP,
-        preds:new Set(),
-        succs:new Set(),
-        order0:units.length
+        preds:new Set(),succs:new Set(),seed:units.length,x:0
       };
-      units.push(u);
-      members.forEach(p=>unitOf[p]=u);
+      units.push(u);members.forEach(p=>unitOf[p]=u);
     });
     unitsByGen[g]=units;
   });
 
-  // 2) Liens entre blocs d'après les parentLinks réels.
+  // Liens strictement réels parent -> enfant.
   data.parentLinks.forEach(l=>{
     if(!allowed.has(l.parent)||!allowed.has(l.child))return;
-    const up=unitOf[l.parent],uc=unitOf[l.child];
-    if(!up||!uc||up===uc)return;
-    if(uc.g===up.g+1){
-      up.succs.add(uc);uc.preds.add(up);
-    }
+    const p=unitOf[l.parent],c=unitOf[l.child];
+    if(!p||!c||p===c)return;
+    if(c.g===p.g+1){p.succs.add(c);c.preds.add(p);}
   });
 
-  // 3) Ordre initial stable.
-  gens.forEach(g=>{
-    unitsByGen[g].sort((A,B)=>{
-      const ab=Math.min(...A.members.map(id=>birthSortValue(data.people[id])));
-      const bb=Math.min(...B.members.map(id=>birthSortValue(data.people[id])));
-      return ab-bb || A.order0-B.order0;
+  const GAP=70,BRANCH_GAP=125,pos={},center={};
+
+  // IMPORTANT V7.3.2 :
+  // on construit DU HAUT VERS LE BAS uniquement.
+  // Une génération déjà placée n'est JAMAIS réordonnée par ses descendants.
+  // Cela empêche l'ajout de petits-enfants de déplacer/mélanger les branches supérieures.
+  gens.forEach((g,gi)=>{
+    let arr=unitsByGen[g];
+
+    if(gi===0){
+      arr.sort((A,B)=>{
+        const av=Math.min(...A.members.map(id=>birthSortValue(data.people[id])));
+        const bv=Math.min(...B.members.map(id=>birthSortValue(data.people[id])));
+        return av-bv||A.seed-B.seed;
+      });
+    }else{
+      const prev=unitsByGen[gens[gi-1]]||[];
+      const pIndex=new Map(prev.map((u,i)=>[u,i]));
+      const pCenter=u=>{
+        const ps=[...u.preds].filter(p=>pIndex.has(p));
+        if(!ps.length)return null;
+        return ps.map(p=>center[p.id]).reduce((a,b)=>a+b,0)/ps.length;
+      };
+      arr.sort((A,B)=>{
+        const a=pCenter(A),b=pCenter(B);
+        if(a!==null&&b!==null&&Math.abs(a-b)>1)return a-b;
+        if(a!==null&&b===null)return -1;
+        if(a===null&&b!==null)return 1;
+        return A.seed-B.seed;
+      });
+    }
+
+    // Cible = centre exact des ascendants directs.
+    const targets=arr.map(u=>{
+      const ps=[...u.preds].filter(p=>center[p.id]!==undefined);
+      return ps.length ? ps.map(p=>center[p.id]).reduce((a,b)=>a+b,0)/ps.length : null;
     });
+
+    // Placement de gauche à droite, sans chevauchement.
+    let cursor=PED_LEFT;
+    arr.forEach((u,i)=>{
+      const ideal=targets[i]===null ? cursor : targets[i]-u.width/2;
+      u.x=Math.max(cursor,ideal);
+      cursor=u.x+u.width+GAP;
+    });
+
+    // Puis de droite à gauche pour rapprocher chaque branche de SES parents
+    // sans jamais inverser l'ordre obtenu.
+    for(let i=arr.length-2;i>=0;i--){
+      if(targets[i]===null)continue;
+      const maxX=arr[i+1].x-GAP-arr[i].width;
+      const ideal=targets[i]-arr[i].width/2;
+      arr[i].x=Math.min(maxX,Math.max(arr[i].x,ideal));
+    }
+
+    // Séparation visuelle supplémentaire entre familles qui n'ont aucun parent commun.
+    for(let i=1;i<arr.length;i++){
+      const A=arr[i-1],B=arr[i];
+      const common=[...A.preds].some(p=>B.preds.has(p));
+      const needed=A.x+A.width+(common?GAP:BRANCH_GAP);
+      if(B.x<needed){
+        const delta=needed-B.x;
+        for(let j=i;j<arr.length;j++)arr[j].x+=delta;
+      }
+    }
+
+    arr.forEach(u=>center[u.id]=u.x+u.width/2);
   });
 
-  function idx(g){
-    const m=new Map();(unitsByGen[g]||[]).forEach((u,i)=>m.set(u,i));return m;
-  }
-
-  function reordered(units,neighborIndex,which){
-    return units.map((u,i)=>{
-      const ns=[...(which==='pred'?u.preds:u.succs)].filter(n=>neighborIndex.has(n));
-      const vals=ns.map(n=>neighborIndex.get(n));
-      return {u,old:i,b:vals.length?vals.reduce((a,b)=>a+b,0)/vals.length:null};
-    }).sort((A,B)=>{
-      if(A.b!==null&&B.b!==null&&Math.abs(A.b-B.b)>1e-9)return A.b-B.b;
-      if(A.b!==null&&B.b===null)return -1;
-      if(A.b===null&&B.b!==null)return 1;
-      return A.old-B.old;
-    }).map(x=>x.u);
-  }
-
-  // 4) Balayages barycentriques pour réduire les croisements.
-  for(let pass=0;pass<30;pass++){
-    for(let i=1;i<gens.length;i++){
-      const g=gens[i],pg=gens[i-1];
-      unitsByGen[g]=reordered(unitsByGen[g],idx(pg),'pred');
-    }
-    for(let i=gens.length-2;i>=0;i--){
-      const g=gens[i],ng=gens[i+1];
-      unitsByGen[g]=reordered(unitsByGen[g],idx(ng),'succ');
-    }
-  }
-
-  // 5) Ordre interne d'un couple selon la position de ses propres ascendants.
-  gens.forEach(g=>{
-    const pidx=idx(g-1);
+  // Ajustement interne des couples : chacun du côté de sa propre ascendance.
+  gens.forEach((g,gi)=>{
+    if(gi===0)return;
+    const prev=unitsByGen[gens[gi-1]]||[];
+    const pIndex=new Map(prev.map((u,i)=>[u,i]));
     unitsByGen[g].forEach(u=>{
       if(u.members.length!==2)return;
       const score=id=>{
-        const ps=exactParents(id,allowed).map(p=>unitOf[p]).filter(x=>x&&pidx.has(x));
+        const ps=exactParents(id,allowed).map(p=>unitOf[p]).filter(x=>x&&pIndex.has(x));
         if(!ps.length)return null;
-        return ps.map(x=>pidx.get(x)).reduce((a,b)=>a+b,0)/ps.length;
+        return ps.map(x=>center[x.id]).reduce((a,b)=>a+b,0)/ps.length;
       };
       const a=score(u.members[0]),b=score(u.members[1]);
       if(a!==null&&b!==null&&a>b)u.members.reverse();
@@ -979,48 +1003,9 @@ function buildPedigreeLayout(startId){
     });
   });
 
-  // 6) Positions horizontales selon l'ordre obtenu.
-  const pos={},center={};
-  const GAP=90;
-  gens.forEach(g=>{
-    let x=PED_LEFT;
-    unitsByGen[g].forEach(u=>{
-      u.x=x;
-      center[u.id]=x+u.width/2;
-      x+=u.width+GAP;
-    });
-  });
-
-  function targetCenter(u){
-    const ps=[...u.preds].filter(n=>center[n.id]!==undefined);
-    if(ps.length)return ps.map(n=>center[n.id]).reduce((a,b)=>a+b,0)/ps.length;
-    const cs=[...u.succs].filter(n=>center[n.id]!==undefined);
-    if(cs.length)return cs.map(n=>center[n.id]).reduce((a,b)=>a+b,0)/cs.length;
-    return center[u.id];
-  }
-
-  // 7) Rapprochement des branches sans changer l'ordre ni faire chevaucher les blocs.
-  for(let pass=0;pass<20;pass++){
-    gens.forEach(g=>{
-      const arr=unitsByGen[g];
-      arr.forEach(u=>{
-        const ideal=targetCenter(u)-u.width/2;
-        u.x=u.x*0.5+ideal*0.5;
-      });
-
-      for(let i=1;i<arr.length;i++){
-        const min=arr[i-1].x+arr[i-1].width+GAP;
-        if(arr[i].x<min)arr[i].x=min;
-      }
-      for(let i=arr.length-2;i>=0;i--){
-        const max=arr[i+1].x-GAP-arr[i].width;
-        if(arr[i].x>max)arr[i].x=max;
-      }
-      arr.forEach(u=>center[u.id]=u.x+u.width/2);
-    });
-  }
-
-  const minX=Math.min(PED_LEFT,...gens.flatMap(g=>unitsByGen[g].map(u=>u.x)));
+  // Recentrage global sans changer aucune relation spatiale.
+  const allUnits=gens.flatMap(g=>unitsByGen[g]);
+  const minX=Math.min(PED_LEFT,...allUnits.map(u=>u.x));
   const shift=minX<PED_LEFT?PED_LEFT-minX:0;
   let canvasW=1200;
 
@@ -1029,12 +1014,7 @@ function buildPedigreeLayout(startId){
     unitsByGen[g].forEach(u=>{
       const ux=u.x+shift;
       u.members.forEach((id,i)=>{
-        pos[id]={
-          x:ux+i*(PED_CARD_W+PED_INNER_GAP),
-          y,
-          g,
-          unitKey:u.id
-        };
+        pos[id]={x:ux+i*(PED_CARD_W+PED_INNER_GAP),y,g,unitKey:u.id};
       });
       canvasW=Math.max(canvasW,ux+u.width+PED_LEFT);
     });
