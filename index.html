@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Mon arbre généalogique – V7.3.0</title>
+<title>Mon arbre généalogique – V7.3.1</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 :root{
@@ -140,7 +140,7 @@ label{font-size:12px;font-weight:700;color:#665d56}
 <body>
 
 <header>
-  <h1>🌳 Mon arbre généalogique <small style="font-weight:500;color:#756b63">V7.3.0</small></h1>
+  <h1>🌳 Mon arbre généalogique <small style="font-weight:500;color:#756b63">V7.3.1</small></h1>
   <button class="primary" id="btnNew">+ Personne</button><button id="btnChildrenBatchTop">👨‍👩‍👧‍👦 Plusieurs enfants</button>
   <button id="btnPrintVisible">🖨️ Imprimer la branche</button>
   <button id="btnPrintFull">🖨️ Imprimer l’arbre complet</button><button id="btnCheckTree">✓ Vérifier les liens</button>
@@ -295,8 +295,97 @@ let viewScale=1,panX=20,panY=20,isPanning=false,startPan=null;
 let printRestoreCollapsed=null;
 
 function emptyData(){return {people:{},parentLinks:[],unions:[],selectedId:null};}
+
+function parseYear(s){
+  const m=String(s||'').match(/(\d{4})$/);
+  return m?Number(m[1]):null;
+}
+function repairGenealogyData(d){
+  d=d||emptyData();
+  d.people=d.people||{};
+  d.parentLinks=Array.isArray(d.parentLinks)?d.parentLinks:[];
+  d.unions=Array.isArray(d.unions)?d.unions:[];
+
+  // Supprime doublons et liens vers personnes inexistantes.
+  const seenPL=new Set();
+  d.parentLinks=d.parentLinks.filter(l=>{
+    if(!l||!d.people[l.parent]||!d.people[l.child]||l.parent===l.child)return false;
+    const k=l.parent+'>'+l.child;
+    if(seenPL.has(k))return false;
+    seenPL.add(k);return true;
+  });
+
+  const unionMap=new Map();
+  d.unions.forEach(u=>{
+    if(!u||!d.people[u.a]||!d.people[u.b]||u.a===u.b)return;
+    const k=[u.a,u.b].sort().join('|');
+    if(!unionMap.has(k))unionMap.set(k,u);
+  });
+  d.unions=[...unionMap.values()];
+
+  // Un enfant ne peut avoir que deux parents.
+  const byChild=new Map();
+  d.parentLinks.forEach(l=>{
+    if(!byChild.has(l.child))byChild.set(l.child,[]);
+    byChild.get(l.child).push(l.parent);
+  });
+
+  const unionBetweenD=(a,b)=>d.unions.find(u=>(u.a===a&&u.b===b)||(u.a===b&&u.b===a));
+
+  byChild.forEach((parents,child)=>{
+    parents=[...new Set(parents)];
+    if(parents.length<=2)return;
+
+    const cp=d.people[child];
+    const cy=parseYear(cp?.birth);
+
+    let best=null,bestScore=-1e9;
+    for(let i=0;i<parents.length;i++){
+      for(let j=i+1;j<parents.length;j++){
+        const a=parents[i],b=parents[j],pa=d.people[a],pb=d.people[b];
+        const u=unionBetweenD(a,b);
+        let score=0;
+
+        // Préférence très forte pour une vraie union enregistrée.
+        if(u){
+          score+=40;
+          if(u.type && !['Parents / autre','Inconnu'].includes(u.type))score+=80;
+          if(u.startDate)score+=8;
+        }
+
+        // Couple homme/femme quand le sexe est connu.
+        if(pa?.gender && pb?.gender && pa.gender!==pb.gender)score+=12;
+
+        // Cohérence d'âge.
+        const ay=parseYear(pa?.birth),by=parseYear(pb?.birth);
+        if(cy&&ay&&cy-ay>=12)score+=6;
+        if(cy&&by&&cy-by>=12)score+=6;
+
+        if(score>bestScore){bestScore=score;best=[a,b];}
+      }
+    }
+
+    if(best){
+      const keep=new Set(best);
+      d.parentLinks=d.parentLinks.filter(l=>l.child!==child||keep.has(l.parent));
+    }
+  });
+
+  // Supprime les unions automatiques "Parents / autre" qui ne relient plus aucun enfant commun.
+  const parentsOf=child=>d.parentLinks.filter(l=>l.child===child).map(l=>l.parent);
+  d.unions=d.unions.filter(u=>{
+    if(u.type!=='Parents / autre')return true;
+    const shared=Object.keys(d.people).some(child=>{
+      const ps=parentsOf(child);
+      return ps.includes(u.a)&&ps.includes(u.b);
+    });
+    return shared;
+  });
+
+  return d;
+}
 function normalizeData(d){
-  d=d||emptyData(); d.people=d.people||{}; d.parentLinks=Array.isArray(d.parentLinks)?d.parentLinks:[]; d.unions=Array.isArray(d.unions)?d.unions:[]; 
+  d=repairGenealogyData(d||emptyData()); d.people=d.people||{}; d.parentLinks=Array.isArray(d.parentLinks)?d.parentLinks:[]; d.unions=Array.isArray(d.unions)?d.unions:[]; 
   Object.values(d.people).forEach(p=>{ if(p.photo===undefined)p.photo=''; if(p.notes===undefined)p.notes=''; });
   d.unions.forEach(u=>{ if(!u.type)u.type='Parents / autre'; if(u.startDate===undefined)u.startDate=''; if(u.endDate===undefined)u.endDate=''; });
   return d;
@@ -352,6 +441,7 @@ function persistLocal(){
   localStorage.setItem(KEY,JSON.stringify(store));
 }
 function save(){
+  data=repairGenealogyData(data);
   const t=store.trees[store.activeTreeId]; t.data=data;t.savedAt=Date.now();
   persistLocal();render();
   if(currentUser){clearTimeout(saveTimer);saveTimer=setTimeout(pushAllTrees,800);}
@@ -423,6 +513,7 @@ async function pushAllTrees(){
     if(error)throw error;
 
     for(const t of Object.values(store.trees)){
+      t.data=repairGenealogyData(t.data);
       const existing=(rows||[]).find(r=>r.id===t.cloudId||(r.tree_data&&r.tree_data.local_id===t.id));
       const payload={user_id:currentUser.id,tree_name:t.name,tree_data:{local_id:t.id,data:t.data,saved_at:t.savedAt||Date.now()}};
       if(existing){
@@ -1230,6 +1321,12 @@ function saveRelation(){
   }
 
   if(relationMode==='parent'){
+    const currentParents=getParents(relationSource);
+    if(!currentParents.includes(target) && currentParents.length>=2){
+      if(createdNow)delete data.people[target];
+      alert('Cette personne a déjà deux parents enregistrés. Supprime ou corrige d’abord un parent existant avant d’en ajouter un autre.');
+      return;
+    }
     if(wouldCreateParentCycle(target,relationSource)){
       if(createdNow)delete data.people[target];
       alert('Ce lien créerait une boucle généalogique : cette personne ne peut pas être enregistrée comme parent ici.');
@@ -1257,6 +1354,14 @@ function saveRelation(){
     });
 
   }else if(relationMode==='child'){
+    const existingParents=getParents(target);
+    const requestedParents=[relationSource,$('otherParent').value].filter(Boolean);
+    const resulting=[...new Set([...existingParents,...requestedParents])];
+    if(resulting.length>2){
+      if(createdNow)delete data.people[target];
+      alert('Cet enfant aurait plus de deux parents enregistrés. Corrige d’abord ses liens parentaux existants.');
+      return;
+    }
     if(wouldCreateParentCycle(relationSource,target)){
       if(createdNow)delete data.people[target];
       alert('Ce lien créerait une boucle généalogique : cette personne ne peut pas être enregistrée comme enfant ici.');
