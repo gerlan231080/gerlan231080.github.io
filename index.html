@@ -3,10 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Mon arbre généalogique – V6.6.5</title>
+<title>Mon arbre généalogique – V6.8.2</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="https://unpkg.com/viz.js@2.1.2/viz.js"></script>
-<script src="https://unpkg.com/viz.js@2.1.2/full.render.js"></script>
 <style>
 :root{
   --bg:#f7f3ee;--panel:#fff;--ink:#2e2925;--muted:#756b63;--accent:#8b6b52;
@@ -118,17 +116,31 @@ label{font-size:12px;font-weight:700;color:#665d56}
 
 #tree{min-width:100%;min-height:100%;padding:20px}
 #tree .graphvizWrap{display:inline-block;min-width:max-content}
-#tree .graphvizWrap svg{overflow:visible;max-width:none}
+#tree .graphvizWrap svg{overflow:visible;max-width:none} #tree .graphvizWrap text{font-family:Arial,sans-serif}
 #tree g.node{cursor:pointer}
 #tree .loadingGraph{padding:60px;text-align:center;color:var(--muted);font-weight:600}
 #tree .graphError{padding:30px;color:#a63e3e;background:#fff;border:1px solid #e3c8c8;border-radius:12px;margin:20px}
+
+
+/* V6.8 — moteur généalogique déterministe, sans Graphviz */
+.pedigreeCanvas{position:relative;background:transparent;overflow:visible}
+.pedigreeCanvas .personCard{position:absolute!important;width:190px!important;height:110px!important;min-height:110px!important;flex:none!important;margin:0!important;box-sizing:border-box}
+.pedigreeCanvas .cardTop{height:100%}
+.pedigreeCanvas .cardText{overflow:hidden}
+.pedigreeCanvas .surname,.pedigreeCanvas .firstname{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pedigreeCanvas .meta{line-height:1.25}
+.pedigreeCanvas .generationMark{position:absolute;left:6px;font-size:11px;color:#756b63;font-weight:700;white-space:nowrap}
+.pedigreeCanvas svg.pedigreeLines{position:absolute;left:0;top:0;overflow:visible;pointer-events:none;z-index:1}
+.pedigreeCanvas .personCard{z-index:2}
+.pedigreeCanvas .unionLine,.pedigreeCanvas .descentLine{fill:none;stroke:#9e816b;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.pedigreeCanvas .unionDot{fill:#9e816b}
 
 </style>
 </head>
 <body>
 
 <header>
-  <h1>🌳 Mon arbre généalogique <small style="font-weight:500;color:#756b63">V6.6.5</small></h1>
+  <h1>🌳 Mon arbre généalogique <small style="font-weight:500;color:#756b63">V6.8.2</small></h1>
   <button class="primary" id="btnNew">+ Personne</button>
   <button id="btnPrintVisible">🖨️ Imprimer la branche</button>
   <button id="btnPrintFull">🖨️ Imprimer l’arbre complet</button><button id="btnCheckTree">✓ Vérifier les liens</button>
@@ -368,7 +380,7 @@ async function ensureFreshSession(){
 async function login(){
   const email=$('authEmail').value.trim();if(!email){alert('Indique ton adresse e-mail.');return;}
   setSyncStatus('Envoi du lien…','syncBusy');
-  const {error}=await sb.auth.signInWithOtp({email,options:{emailRedirectTo:'https://funny-beignet-20cdf0.netlify.app/'}});
+  const {error}=await sb.auth.signInWithOtp({email,options:{emailRedirectTo:'https://gerlan231080.github.io/'}});
   if(error){setSyncStatus('Erreur de connexion','syncErr');alert(error.message);return;}
   setSyncStatus('Lien envoyé par e-mail.','syncOk');
 }
@@ -619,147 +631,202 @@ function card(id){
   </div>`;
 }
 
-function dotId(id){return 'p_'+String(id).replace(/[^a-zA-Z0-9_]/g,'_');}
-function dotHtml(s){
-  return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+
+const PED_CARD_W=190,PED_CARD_H=110,PED_INNER_GAP=26,PED_CLUSTER_GAP=90,PED_ROW_STEP=220,PED_LEFT=90,PED_TOP=70;
+
+function pedigreeParents(id,allowed=null){
+  let parents=getParents(id).filter(p=>!allowed||allowed.has(p));
+  if(parents.length===1){
+    const p=parents[0];
+    const partners=getPartners(p).filter(q=>(!allowed||allowed.has(q)));
+    if(partners.length===1){
+      const q=partners[0];
+      // Affichage seulement : si d'autres enfants du même parent ont ce conjoint comme
+      // deuxième parent, on rattache visuellement les anciens liens incomplets au même couple.
+      const evidence=getChildren(p).some(c=>c!==id&&getParents(c).includes(q));
+      if(evidence)parents=[p,q];
+    }
+  }
+  return parents.slice().sort();
 }
-function dotText(s){
-  return String(s??'')
-    .replace(/\\/g,'\\\\')
-    .replace(/"/g,'\\"')
-    .replace(/\r?\n/g,' ');
-}
-function personDotLabel(p){
-  const symbol=p.gender==='male'?'♂':p.gender==='female'?'♀':'•';
-  const lines=[
-    `${symbol} ${(p.lastName||'').toUpperCase()}`,
-    p.firstName||'',
-    p.birth?`Né(e) : ${p.birth}`:'',
-    p.death?`Décédé(e) : ${p.death}`:''
-  ].filter(Boolean);
-  return dotText(lines.join('\\n'));
-}
-function buildGenealogyDot(startId){
-  const ids=component(startId),allowed=new Set(ids),lines=[];
-  lines.push('digraph G {');
-  lines.push('graph [rankdir=TB, splines=ortho, nodesep=0.34, ranksep=0.78, bgcolor="transparent", pad=0.15, newrank=true];');
-  lines.push('node [fontname="Arial"];');
-  lines.push('edge [color="#9e816b", penwidth=1.7, arrowsize=0, arrowhead=none];');
+function pedigreeSiblingGroups(ids,allowed){
+  const groups=new Map();
   ids.forEach(id=>{
-    const p=data.people[id];if(!p)return;
-    const fill=p.gender==='male'?'#dcecfb':p.gender==='female'?'#f8e2eb':'#ece7f6';
-    const border=id===data.selectedId?'#8b6b52':'#cfbcae';
-    const pen=id===data.selectedId?2.6:1.6;
-    lines.push(`${dotId(id)} [shape=box, style="rounded,filled", fillcolor="${fill}", color="${border}", penwidth=${pen}, fontname="Arial", fontsize=11, margin="0.16,0.11", label="${personDotLabel(p)}"];`);
+    const parents=pedigreeParents(id,allowed);
+    const key=parents.length?parents.join('|'):'ROOT:'+id;
+    if(!groups.has(key))groups.set(key,{key,ids:[],parents});
+    groups.get(key).ids.push(id);
+  });
+  return [...groups.values()];
+}
+function pedigreeGroupGraph(groups,genMap,g){
+  const groupOf={};groups.forEach((gr,i)=>gr.ids.forEach(id=>groupOf[id]=i));
+  const edges=[];
+  data.unions.forEach(u=>{
+    if(genMap[u.a]!==g||genMap[u.b]!==g)return;
+    const a=groupOf[u.a],b=groupOf[u.b];
+    if(a===undefined||b===undefined||a===b)return;
+    edges.push({a,b,pa:u.a,pb:u.b});
+  });
+  return {groupOf,edges};
+}
+function pedigreeClusters(groups,genMap,g,parentX){
+  const {edges}=pedigreeGroupGraph(groups,genMap,g);
+  const adj=groups.map(()=>new Set());
+  edges.forEach(e=>{adj[e.a].add(e.b);adj[e.b].add(e.a);});
+  const seen=new Set(),clusters=[];
+  for(let i=0;i<groups.length;i++){
+    if(seen.has(i))continue;
+    const q=[i],idxs=[];seen.add(i);
+    while(q.length){const x=q.shift();idxs.push(x);for(const n of adj[x])if(!seen.has(n)){seen.add(n);q.push(n);}}
+    const sub=idxs.map(x=>groups[x]);
+    const desiredVals=[];
+    sub.forEach(gr=>gr.parents.forEach(p=>{if(parentX[p]!==undefined)desiredVals.push(parentX[p]);}));
+    const desired=desiredVals.length?desiredVals.reduce((a,b)=>a+b,0)/desiredVals.length:null;
+
+    // On ordonne les groupes internes. Pour un couple simple, l'homme est placé à gauche
+    // et la femme à droite quand le sexe est connu, comme sur un pedigree classique.
+    if(sub.length===2){
+      const edge=edges.find(e=>idxs.includes(e.a)&&idxs.includes(e.b));
+      if(edge){
+        const ga=groups[edge.a],gb=groups[edge.b];
+        const pa=data.people[edge.pa],pb=data.people[edge.pb];
+        let leftG=ga,rightG=gb,leftP=edge.pa,rightP=edge.pb;
+        if(pa?.gender==='female'&&pb?.gender==='male'){leftG=gb;rightG=ga;leftP=edge.pb;rightP=edge.pa;}
+        leftG.ids=[...leftG.ids.filter(x=>x!==leftP),leftP];
+        rightG.ids=[rightP,...rightG.ids.filter(x=>x!==rightP)];
+        sub.splice(0,sub.length,leftG,rightG);
+      }
+    }else{
+      sub.sort((A,B)=>{
+        const av=A.parents.map(p=>parentX[p]).filter(v=>v!==undefined);
+        const bv=B.parents.map(p=>parentX[p]).filter(v=>v!==undefined);
+        const aa=av.length?av.reduce((a,b)=>a+b,0)/av.length:1e15;
+        const bb=bv.length?bv.reduce((a,b)=>a+b,0)/bv.length:1e15;
+        return aa-bb;
+      });
+      arrangeSpouseEdges(sub,genMap,g);
+    }
+    const ids=sub.flatMap(gr=>gr.ids);
+    clusters.push({groups:sub,ids,desired});
+  }
+  clusters.sort((A,B)=>{
+    if(A.desired===null&&B.desired===null)return 0;
+    if(A.desired===null)return 1;if(B.desired===null)return -1;
+    return A.desired-B.desired;
+  });
+  return clusters;
+}
+function buildPedigreeLayout(startId){
+  const ids=component(startId).filter(id=>!isHiddenByCollapse(id));
+  const gen=generationMap(startId),levels={};
+  ids.forEach(id=>(levels[gen[id]??0]||(levels[gen[id]??0]=[])).push(id));
+  const gens=Object.keys(levels).map(Number).sort((a,b)=>a-b);
+  const pos={},rowBounds={},parentX={};
+  let canvasW=1000;
+
+  gens.forEach((g,rowIndex)=>{
+    let groups=pedigreeSiblingGroups(levels[g],new Set(ids));
+    groups.forEach(gr=>gr.ids.sort((a,b)=>birthSortValue(data.people[a])-birthSortValue(data.people[b])||nameOf(data.people[a]).localeCompare(nameOf(data.people[b]),'fr')));
+    const clusters=pedigreeClusters(groups,gen,g,parentX);
+    let cursor=PED_LEFT;
+    const rowY=PED_TOP+rowIndex*PED_ROW_STEP;
+    let rowMin=Infinity,rowMax=-Infinity;
+
+    clusters.forEach(cl=>{
+      const width=cl.ids.length*PED_CARD_W+Math.max(0,cl.ids.length-1)*PED_INNER_GAP;
+      let start=cl.desired===null?cursor:cl.desired-width/2;
+      start=Math.max(cursor,start);
+      cl.ids.forEach((id,i)=>{
+        const x=start+i*(PED_CARD_W+PED_INNER_GAP);
+        pos[id]={x,y:rowY,g};parentX[id]=x+PED_CARD_W/2;
+        rowMin=Math.min(rowMin,x);rowMax=Math.max(rowMax,x+PED_CARD_W);
+      });
+      cursor=start+width+PED_CLUSTER_GAP;
+    });
+    if(rowMin===Infinity){rowMin=PED_LEFT;rowMax=PED_LEFT+500;}
+    rowBounds[g]={min:rowMin,max:rowMax,y:rowY};
+    canvasW=Math.max(canvasW,rowMax+PED_LEFT);
   });
 
-  const families=new Map();
-  ids.forEach(child=>{
-    const parents=getParents(child).filter(p=>allowed.has(p)).sort();
+  const canvasH=PED_TOP+gens.length*PED_ROW_STEP+80;
+  return {ids,gen,gens,levels,pos,canvasW,canvasH};
+}
+function pedigreeFamilySets(layout){
+  const allowed=new Set(layout.ids),families=new Map();
+  layout.ids.forEach(child=>{
+    const parents=pedigreeParents(child,allowed);
     if(!parents.length)return;
     const key=parents.join('|');
     if(!families.has(key))families.set(key,{parents,children:[]});
     families.get(key).children.push(child);
   });
+  return [...families.values()];
+}
+function renderPedigree(startId){
+  const layout=buildPedigreeLayout(startId),tree=$('tree');
+  const marks=layout.gens.map((g,i)=>{
+    const label=g<0?`Génération ${Math.abs(g)} au-dessus`:g===0?'Génération sélectionnée':`Génération ${g} en dessous`;
+    return `<div class="generationMark" style="top:${PED_TOP+i*PED_ROW_STEP-24}px">${esc(label)}</div>`;
+  }).join('');
+  tree.innerHTML=`<div class="pedigreeCanvas" id="pedigreeCanvas" style="width:${layout.canvasW}px;height:${layout.canvasH}px"><svg class="pedigreeLines" id="pedigreeLines" width="${layout.canvasW}" height="${layout.canvasH}" viewBox="0 0 ${layout.canvasW} ${layout.canvasH}"></svg>${marks}${layout.ids.map(id=>`<div style="position:absolute;left:${layout.pos[id].x}px;top:${layout.pos[id].y}px">${card(id)}</div>`).join('')}</div>`;
+  // card() itself is positioned relative, so transfer the wrapper coordinates to the card.
+  tree.querySelectorAll('.pedigreeCanvas > div[style*="position:absolute"] > .personCard').forEach(cardEl=>{
+    const wrap=cardEl.parentElement;cardEl.style.left=wrap.style.left;cardEl.style.top=wrap.style.top;
+    wrap.parentElement.insertBefore(cardEl,wrap);wrap.remove();
+  });
+  tree.querySelectorAll('.personCard').forEach(el=>el.onclick=e=>{if(e.target.closest('.branchToggle'))return;data.selectedId=el.dataset.id;render();openPerson(el.dataset.id);});
+  tree.querySelectorAll('.branchToggle').forEach(b=>b.onclick=e=>{e.stopPropagation();const id=b.dataset.toggle;if(collapsed.has(id))collapsed.delete(id);else collapsed.add(id);render();});
+  drawPedigreeLines(layout);
+  requestAnimationFrame(()=>requestAnimationFrame(fitGraphToViewport));
+}
+function drawPedigreeLines(layout){
+  const svg=$('pedigreeLines');if(!svg)return;svg.innerHTML='';
+  const NS='http://www.w3.org/2000/svg';
+  const path=(d,cls)=>{const p=document.createElementNS(NS,'path');p.setAttribute('d',d);p.setAttribute('class',cls);svg.appendChild(p);};
+  const circle=(cx,cy)=>{const c=document.createElementNS(NS,'circle');c.setAttribute('cx',cx);c.setAttribute('cy',cy);c.setAttribute('r',4);c.setAttribute('class','unionDot');svg.appendChild(c);};
+
+  // Unions : ligne directe entre cartes conjointes.
   data.unions.forEach(u=>{
-    if(!allowed.has(u.a)||!allowed.has(u.b))return;
-    const parents=[u.a,u.b].sort(),key=parents.join('|');
-    if(!families.has(key))families.set(key,{parents,children:[]});
+    const A=layout.pos[u.a],B=layout.pos[u.b];if(!A||!B||A.g!==B.g)return;
+    const left=A.x<=B.x?A:B,right=A.x<=B.x?B:A;
+    const y=left.y+PED_CARD_H/2;
+    path(`M ${left.x+PED_CARD_W} ${y} L ${right.x} ${y}`,'unionLine');
+    circle((left.x+PED_CARD_W+right.x)/2,y);
   });
 
-  let n=0;
-  families.forEach(f=>{
-    const fam='fam_'+n++;
-    if(f.parents.length>=2){
-      const a=dotId(f.parents[0]),b=dotId(f.parents[1]);
-      lines.push(`${fam} [shape=point,width=0.055,height=0.055,label="",style=filled,color="#9e816b",fillcolor="#9e816b"];`);
-      lines.push(`{rank=same; ${a}; ${fam}; ${b};}`);
-      lines.push(`${a} -> ${fam} [dir=none,weight=100,minlen=0];`);
-      lines.push(`${fam} -> ${b} [dir=none,weight=100,minlen=0];`);
-      f.children.forEach(ch=>lines.push(`${fam} -> ${dotId(ch)} [weight=35,minlen=1];`));
-    }else if(f.parents.length===1){
-      f.children.forEach(ch=>lines.push(`${dotId(f.parents[0])} -> ${dotId(ch)} [weight=35,minlen=1];`));
-    }
+  // Descendance : une barre de fratrie indépendante par jeu exact de parents.
+  const fams=pedigreeFamilySets(layout).sort((A,B)=>{
+    const ay=Math.min(...A.parents.map(p=>layout.pos[p]?.y??1e9));
+    const by=Math.min(...B.parents.map(p=>layout.pos[p]?.y??1e9));
+    return ay-by;
   });
-  lines.push('}');
-  return lines.join('\n');
+  const channels=new Map();
+  fams.forEach(f=>{
+    const children=f.children.filter(c=>layout.pos[c]).sort((a,b)=>layout.pos[a].x-layout.pos[b].x);if(!children.length)return;
+    const parents=f.parents.filter(p=>layout.pos[p]);if(!parents.length)return;
+    const pg=layout.pos[parents[0]].g;
+    const key=String(pg);const ch=channels.get(key)||0;channels.set(key,ch+1);
+    const py=Math.max(...parents.map(p=>layout.pos[p].y+PED_CARD_H));
+    const cy=Math.min(...children.map(c=>layout.pos[c].y));
+    const originX=parents.length>=2
+      ? parents.map(p=>layout.pos[p].x+PED_CARD_W/2).reduce((a,b)=>a+b,0)/parents.length
+      : layout.pos[parents[0]].x+PED_CARD_W/2;
+    const busY=Math.min(cy-34,py+45+ch*18);
+    const xs=children.map(c=>layout.pos[c].x+PED_CARD_W/2);
+    const minX=Math.min(originX,...xs),maxX=Math.max(originX,...xs);
+    path(`M ${originX} ${py} L ${originX} ${busY}`,'descentLine');
+    if(maxX-minX>1)path(`M ${minX} ${busY} L ${maxX} ${busY}`,'descentLine');
+    children.forEach(c=>{const x=layout.pos[c].x+PED_CARD_W/2;path(`M ${x} ${busY} L ${x} ${layout.pos[c].y}`,'descentLine');});
+  });
 }
-
 function fitGraphToViewport(){
-  const vp=$('treeViewport');
-  const stage=$('treeStage');
-  const wrap=$('tree')?.querySelector('.graphvizWrap');
-  const svg=wrap?.querySelector('svg');
-  if(!vp||!stage||!wrap||!svg)return;
-
-  const vb=svg.viewBox?.baseVal;
-  let graphW=vb?.width||0, graphH=vb?.height||0;
-
-  // Fallback to original Graphviz dimensions if viewBox is absent.
-  if(!graphW||!graphH){
-    const w=parseFloat(svg.getAttribute('width'))||0;
-    const h=parseFloat(svg.getAttribute('height'))||0;
-    graphW=w;graphH=h;
-  }
-  if(!graphW||!graphH)return;
-
-  // Give the SVG and its containers explicit, stable dimensions.
-  svg.style.width=graphW+'px';
-  svg.style.height=graphH+'px';
-  svg.style.maxWidth='none';
-  svg.style.display='block';
-  wrap.style.width=graphW+'px';
-  wrap.style.height=graphH+'px';
-  $('tree').style.width=graphW+'px';
-  $('tree').style.height=graphH+'px';
-  stage.style.width=graphW+'px';
-  stage.style.height=graphH+'px';
-
-  const availW=Math.max(250,vp.clientWidth-60);
-  const availH=Math.max(250,vp.clientHeight-60);
-
-  viewScale=Math.min(1.2,Math.max(0.20,Math.min(availW/graphW,availH/graphH)));
-  panX=(vp.clientWidth-graphW*viewScale)/2;
-  panY=(vp.clientHeight-graphH*viewScale)/2;
-  if(panY<20)panY=20;
-
-  applyView();
+  const vp=$('treeViewport'),canvas=$('pedigreeCanvas');if(!vp||!canvas)return;
+  const w=parseFloat(canvas.style.width)||canvas.scrollWidth,h=parseFloat(canvas.style.height)||canvas.scrollHeight;
+  const availW=Math.max(250,vp.clientWidth-50),availH=Math.max(250,vp.clientHeight-50);
+  viewScale=Math.min(1.15,Math.max(.28,Math.min(availW/w,availH/h)));
+  panX=(vp.clientWidth-w*viewScale)/2;panY=Math.max(18,(vp.clientHeight-h*viewScale)/2);applyView();
 }
-let graphRenderToken=0, graphVizInstance=null;
-async function renderGenealogyGraph(startId){
-  const token=++graphRenderToken,tree=$('tree');
-  tree.innerHTML='<div class="loadingGraph">Construction de l’arbre…</div>';
-  try{
-    if(typeof window.Viz!=='function')throw new Error('Le moteur graphique Viz.js ne s’est pas chargé.');
-    if(!graphVizInstance)graphVizInstance=new window.Viz();
-    const dot=buildGenealogyDot(startId);
-    let svg;
-    try{svg=await graphVizInstance.renderSVGElement(dot);}
-    catch(e){graphVizInstance=new window.Viz();svg=await graphVizInstance.renderSVGElement(dot);}
-    if(token!==graphRenderToken)return;
-    tree.innerHTML='<div class="graphvizWrap"></div>';
-    tree.querySelector('.graphvizWrap').appendChild(svg);
-    // Keep Graphviz's intrinsic dimensions; fitGraphToViewport will normalize them.
-    tree.querySelectorAll('g.node').forEach(node=>{
-      const title=node.querySelector('title')?.textContent||'';
-      const match=Object.keys(data.people).find(id=>dotId(id)===title);
-      if(!match)return;
-      node.dataset.id=match;
-      node.addEventListener('click',()=>{data.selectedId=match;render();openPerson(match);});
-    });
-    requestAnimationFrame(()=>requestAnimationFrame(()=>{
-      fitGraphToViewport();
-      const svgNow=$('tree')?.querySelector('svg');
-      if(svgNow && !svgNow.viewBox?.baseVal?.width){
-        console.warn('SVG Graphviz sans viewBox exploitable');
-      }
-    }));
-  }catch(e){
-    console.error('renderGenealogyGraph',e);
-    tree.innerHTML=`<div class="graphError"><strong>Erreur d’affichage de l’arbre</strong><br>${esc(e.message||e)}</div>`;
-  }
-}
-
 function renderFamily(startId){
   const gen=generationMap(startId),levels={};
   Object.keys(gen).forEach(id=>(levels[gen[id]]||(levels[gen[id]]=[])).push(id));
@@ -873,7 +940,7 @@ function render(){
     $('tree').innerHTML='<div class="treeEmpty">Aucune personne. Clique sur « + Personne ».</div>';
   }else{
     if(!data.selectedId||!data.people[data.selectedId])data.selectedId=ids[0];
-    renderGenealogyGraph(data.selectedId);
+    renderPedigree(data.selectedId);
   }
   renderList();renderRelationshipSelects();
   $('status').textContent=`${ids.length} personne(s) • ${data.unions.length} union(s)`;
@@ -893,16 +960,9 @@ function renderRelationshipSelects(){
 function applyView(){$('treeStage').style.transform=`translate(${panX}px,${panY}px) scale(${viewScale})`;$('zoomReset').textContent=Math.round(viewScale*100)+'%';}
 function resetView(){viewScale=1;panX=20;panY=20;applyView();}
 function centerOnPerson(id){
-  const vp=$('treeViewport');
-  const node=[...$('tree').querySelectorAll('g.node')].find(n=>{
-    const title=n.querySelector('title')?.textContent||'';
-    return dotId(id)===title;
-  });
-  if(!node)return;
+  const vp=$('treeViewport'),node=$('tree')?.querySelector(`.personCard[data-id="${id}"]`);if(!vp||!node)return;
   const nr=node.getBoundingClientRect(),vr=vp.getBoundingClientRect();
-  panX+=(vr.left+vr.width/2)-(nr.left+nr.width/2);
-  panY+=(vr.top+vr.height/2)-(nr.top+nr.height/2);
-  applyView();
+  panX+=(vr.left+vr.width/2)-(nr.left+nr.width/2);panY+=(vr.top+vr.height/2)-(nr.top+nr.height/2);applyView();
 }
 function setZoom(z,cx,cy){
   const vp=$('treeViewport'),old=viewScale;z=Math.max(.35,Math.min(1.8,z));cx=cx??vp.clientWidth/2;cy=cy??vp.clientHeight/2;
@@ -1183,7 +1243,7 @@ vp.addEventListener('pointermove',e=>{if(!isPanning)return;panX=startPan.px+e.cl
 vp.addEventListener('pointerup',()=>{isPanning=false;vp.classList.remove('dragging');});
 vp.addEventListener('wheel',e=>{e.preventDefault();const r=vp.getBoundingClientRect();setZoom(viewScale*(e.deltaY<0?1.1:.9),e.clientX-r.left,e.clientY-r.top);},{passive:false});
 
-window.addEventListener('resize',()=>{if($('tree')?.querySelector('.graphvizWrap'))fitGraphToViewport();});
+window.addEventListener('resize',()=>{if($('tree')?.querySelector('.pedigreeCanvas'))fitGraphToViewport();});
 window.addEventListener('focus',()=>{if(currentUser)syncBothWays();});
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&currentUser)syncBothWays();});
 
