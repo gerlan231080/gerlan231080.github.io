@@ -368,7 +368,7 @@ async function ensureFreshSession(){
 async function login(){
   const email=$('authEmail').value.trim();if(!email){alert('Indique ton adresse e-mail.');return;}
   setSyncStatus('Envoi du lien…','syncBusy');
-  const {error}=await sb.auth.signInWithOtp({email,options:{emailRedirectTo:'https://https://gerlan231080.github.io/arbre-genealogique//'}});
+  const {error}=await sb.auth.signInWithOtp({email,options:{emailRedirectTo:'https://funny-beignet-20cdf0.netlify.app/'}});
   if(error){setSyncStatus('Erreur de connexion','syncErr');alert(error.message);return;}
   setSyncStatus('Lien envoyé par e-mail.','syncOk');
 }
