@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Mon arbre généalogique – V7.3.4</title>
+<title>Mon arbre généalogique – V7.3.5</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 :root{
@@ -141,7 +141,7 @@ label{font-size:12px;font-weight:700;color:#665d56}
 <body>
 
 <header>
-  <h1>🌳 Mon arbre généalogique <small style="font-weight:500;color:#756b63">V7.3.4</small></h1>
+  <h1>🌳 Mon arbre généalogique <small style="font-weight:500;color:#756b63">V7.3.5</small></h1>
   <button class="primary" id="btnNew">+ Personne</button><button id="btnChildrenBatchTop">👨‍👩‍👧‍👦 Plusieurs enfants</button>
   <button id="btnPrintVisible">🖨️ Imprimer la branche</button>
   <button id="btnPrintFull">🖨️ Imprimer l’arbre complet</button><button id="btnCheckTree">✓ Vérifier les liens</button>
@@ -725,7 +725,7 @@ function card(id){
 }
 
 
-const PED_CARD_W=190,PED_CARD_H=110,PED_INNER_GAP=26,PED_CLUSTER_GAP=90,PED_ROW_STEP=250,PED_LEFT=90,PED_TOP=70;
+const PED_CARD_W=190,PED_CARD_H=110,PED_INNER_GAP=22,PED_CLUSTER_GAP=58,PED_ROW_STEP=250,PED_LEFT=70,PED_TOP=70;
 
 function pedigreeParents(id,allowed=null){
   let parents=getParents(id).filter(p=>!allowed||allowed.has(p));
@@ -929,7 +929,7 @@ function buildPedigreeLayout(startId){
   const idx=g=>new Map((unitsByGen[g]||[]).map((u,i)=>[u,i]));
 
   /*
-    RÈGLE V7.3.4 :
+    RÈGLE V7.3.5 :
     - si un bloc a des parents connus : son ordre dépend UNIQUEMENT de ses parents ;
     - s'il n'a aucun parent connu (racine d'une branche) : son ordre peut dépendre
       de ses enfants pour placer correctement les branches ascendantes.
@@ -997,7 +997,7 @@ function buildPedigreeLayout(startId){
   });
 
   // 4. Placement horizontal.
-  const GAP=80, FAMILY_GAP=125, pos={},center={};
+  const GAP=42, FAMILY_GAP=64, pos={},center={};
 
   gens.forEach((g,gi)=>{
     const arr=unitsByGen[g];
@@ -1070,7 +1070,29 @@ function buildPedigreeLayout(startId){
     }
   }
 
-  // 6. Translation globale uniquement.
+
+  // 6. Compaction esthétique finale :
+  // rapproche les cartes sur chaque ligne sans modifier l'ordre familial.
+  gens.forEach(g=>{
+    const arr=unitsByGen[g];
+    if(!arr.length)return;
+
+    for(let i=1;i<arr.length;i++){
+      const A=arr[i-1],B=arr[i];
+      const sameFamily=[...A.preds].some(p=>B.preds.has(p));
+      const gap=sameFamily?42:64;
+      const min=A.x+A.width+gap;
+      if(B.x>min){
+        const d=B.x-min;
+        for(let j=i;j<arr.length;j++){
+          arr[j].x-=d;
+          center[arr[j].id]-=d;
+        }
+      }
+    }
+  });
+
+  // 7. Translation globale uniquement.
   const all=gens.flatMap(g=>unitsByGen[g]);
   const minX=Math.min(PED_LEFT,...all.map(u=>u.x));
   const shift=minX<PED_LEFT?PED_LEFT-minX:0;
