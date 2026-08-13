@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Mon arbre généalogique – V7.2.0</title>
+<title>Mon arbre généalogique – V7.2.1</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 :root{
@@ -140,7 +140,7 @@ label{font-size:12px;font-weight:700;color:#665d56}
 <body>
 
 <header>
-  <h1>🌳 Mon arbre généalogique <small style="font-weight:500;color:#756b63">V7.2.0</small></h1>
+  <h1>🌳 Mon arbre généalogique <small style="font-weight:500;color:#756b63">V7.2.1</small></h1>
   <button class="primary" id="btnNew">+ Personne</button><button id="btnChildrenBatchTop">👨‍👩‍👧‍👦 Plusieurs enfants</button>
   <button id="btnPrintVisible">🖨️ Imprimer la branche</button>
   <button id="btnPrintFull">🖨️ Imprimer l’arbre complet</button><button id="btnCheckTree">✓ Vérifier les liens</button>
@@ -317,6 +317,7 @@ function nameOf(p){return [p?.lastName,p?.firstName].filter(Boolean).join(' ')||
 function optionLabel(p){return nameOf(p)+(p?.birth?' — né(e) le '+p.birth:'');}
 function treeName(){return store.trees[store.activeTreeId]?.name||'Mon arbre';}
 function getParents(id){return data.parentLinks.filter(x=>x.child===id).map(x=>x.parent);}
+function exactParents(id,allowed=null){return getParents(id).filter(p=>!allowed||allowed.has(p)).slice().sort();}
 function getChildren(id){return data.parentLinks.filter(x=>x.parent===id).map(x=>x.child);}
 function getPartners(id){const a=[];data.unions.forEach(u=>{if(u.a===id)a.push(u.b);if(u.b===id)a.push(u.a);});return [...new Set(a)];}
 function unionBetween(a,b){return data.unions.find(u=>(u.a===a&&u.b===b)||(u.a===b&&u.b===a));}
@@ -970,7 +971,7 @@ function drawPedigreeLines(layout){
   });
 
   /*
-    V7.2.0 :
+    V7.2.1 :
     une famille = un seul couloir local situé ENTRE ses parents et ses enfants.
     La barre horizontale ne s'étend JAMAIS au-delà des enfants de cette famille.
     Le tronc venant des parents rejoint le point le plus proche de cette barre.
