@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Mon arbre généalogique – V6.9.3</title>
+<title>Mon arbre généalogique – V6.9.4</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 :root{
@@ -140,7 +140,7 @@ label{font-size:12px;font-weight:700;color:#665d56}
 <body>
 
 <header>
-  <h1>🌳 Mon arbre généalogique <small style="font-weight:500;color:#756b63">V6.9.3</small></h1>
+  <h1>🌳 Mon arbre généalogique <small style="font-weight:500;color:#756b63">V6.9.4</small></h1>
   <button class="primary" id="btnNew">+ Personne</button><button id="btnChildrenBatchTop">👨‍👩‍👧‍👦 Plusieurs enfants</button>
   <button id="btnPrintVisible">🖨️ Imprimer la branche</button>
   <button id="btnPrintFull">🖨️ Imprimer l’arbre complet</button><button id="btnCheckTree">✓ Vérifier les liens</button>
@@ -632,7 +632,7 @@ function card(id){
 }
 
 
-const PED_CARD_W=190,PED_CARD_H=110,PED_INNER_GAP=26,PED_CLUSTER_GAP=90,PED_ROW_STEP=220,PED_LEFT=90,PED_TOP=70;
+const PED_CARD_W=190,PED_CARD_H=110,PED_INNER_GAP=26,PED_CLUSTER_GAP=90,PED_ROW_STEP=250,PED_LEFT=90,PED_TOP=70;
 
 function pedigreeParents(id,allowed=null){
   let parents=getParents(id).filter(p=>!allowed||allowed.has(p));
@@ -770,6 +770,7 @@ function pedigreeVisualBlocks(groups,genMap,g){
   return blocks;
 }
 
+
 function buildPedigreeLayout(startId){
   const ids=component(startId).filter(id=>!isHiddenByCollapse(id));
   const allowed=new Set(ids);
@@ -788,144 +789,184 @@ function buildPedigreeLayout(startId){
     blocksByGen[g]=pedigreeVisualBlocks(groups,gen,g);
   });
 
-  // Map personne -> groupe.
-  const groupOfPerson={};
-  gens.forEach(g=>groupsByGen[g].forEach((gr,i)=>gr.ids.forEach(id=>groupOfPerson[id]={g,i,gr})));
-
   /*
-    ORDRE DES BLOCS : du bas vers le haut.
-    Un mariage entre deux groupes ne les fusionne PAS. Il sert seulement à
-    définir leur ordre gauche/droite. Les ascendants sont ensuite ordonnés
-    d'après la position de leurs propres enfants.
+    Ordre de secours calculé du bas vers le haut.
+    Il sert uniquement quand un bloc n'a pas encore de parents positionnés
+    (par exemple la génération la plus haute).
   */
-  const blockOrder={},personOrder={};
+  const fallbackOrder={},personFallback={};
   [...gens].sort((a,b)=>b-a).forEach(g=>{
-    const blocks=blocksByGen[g];
-
+    const blocks=[...blocksByGen[g]];
     blocks.forEach((bl,idx)=>{
       const children=new Set();
-      bl.groups.forEach(gr=>gr.ids.forEach(id=>
+      bl.groups.forEach(gr=>gr.ids.forEach(id=>{
         getChildren(id).forEach(ch=>{
           if(allowed.has(ch)&&(gen[ch]??0)===g+1)children.add(ch);
-        })
-      ));
-      const vals=[...children].map(ch=>personOrder[ch]).filter(v=>v!==undefined);
-      bl.score=vals.length?vals.reduce((a,b)=>a+b,0)/vals.length:null;
-      bl.original=idx;
+        });
+      }));
+      const vals=[...children].map(ch=>personFallback[ch]).filter(v=>v!==undefined);
+      bl._fallbackScore=vals.length?vals.reduce((a,b)=>a+b,0)/vals.length:null;
+      bl._original=idx;
     });
-
     blocks.sort((A,B)=>{
-      if(A.score!==null&&B.score!==null&&A.score!==B.score)return A.score-B.score;
-      if(A.score!==null&&B.score===null)return -1;
-      if(B.score!==null&&A.score===null)return 1;
-      return A.original-B.original;
+      if(A._fallbackScore!==null&&B._fallbackScore!==null&&A._fallbackScore!==B._fallbackScore)
+        return A._fallbackScore-B._fallbackScore;
+      if(A._fallbackScore!==null)return -1;
+      if(B._fallbackScore!==null)return 1;
+      return A._original-B._original;
     });
-
-    blockOrder[g]=blocks;
+    fallbackOrder[g]=blocks;
     let n=0;
-    blocks.forEach(bl=>bl.groups.forEach(gr=>gr.ids.forEach(id=>personOrder[id]=n++)));
+    blocks.forEach(bl=>bl.groups.forEach(gr=>gr.ids.forEach(id=>personFallback[id]=n++)));
   });
 
   const pos={},rowBounds={};
   let canvasW=1200;
 
   /*
-    POSITIONNEMENT HAUT -> BAS.
-    Règle dure : un groupe de frères/sœurs est centré sous SES parents,
-    indépendamment du conjoint d'un de ses membres.
+    RÈGLE PRINCIPALE V6.9.4
+    =======================
+    Chaque nouvelle génération est ordonnée APRÈS que la génération parente
+    a été réellement positionnée.
+
+    Ainsi :
+      - un enfant reste sous ses propres parents ;
+      - une fratrie reste sous son propre couple parental ;
+      - les groupes d'une même génération ne peuvent plus être laissés dans
+        un ordre qui oblige les lignes de filiation à se croiser.
   */
   gens.forEach(g=>{
     const rowIndex=gens.indexOf(g),rowY=PED_TOP+rowIndex*PED_ROW_STEP;
-    const orderedGroups=blockOrder[g].flatMap(bl=>bl.groups);
+    let blocks=[...(fallbackOrder[g]||blocksByGen[g])];
 
-    orderedGroups.forEach(gr=>{
-      gr.width=gr.ids.length*PED_CARD_W+Math.max(0,gr.ids.length-1)*PED_INNER_GAP;
-      const px=gr.parents
-        .filter(p=>pos[p])
-        .map(p=>pos[p].x+PED_CARD_W/2);
-      gr.desired=px.length?px.reduce((a,b)=>a+b,0)/px.length:null;
+    // Calcule l'ancre parentale de CHAQUE groupe, pas seulement du bloc complet.
+    blocks.forEach(bl=>{
+      bl.groups.forEach(gr=>{
+        gr.width=gr.ids.length*PED_CARD_W+Math.max(0,gr.ids.length-1)*PED_INNER_GAP;
+        const parents=[...new Set(gr.parents)].filter(p=>pos[p]);
+        const px=parents.map(p=>pos[p].x+PED_CARD_W/2);
+        gr._parentAnchor=px.length?px.reduce((a,b)=>a+b,0)/px.length:null;
+      });
+
+      const anchors=bl.groups.map(gr=>gr._parentAnchor).filter(v=>v!==null);
+      bl._parentAnchor=anchors.length?anchors.reduce((a,b)=>a+b,0)/anchors.length:null;
+
+      // Dans un bloc lié par mariage, la branche dont les parents sont à gauche
+      // reste à gauche. Cela évite le croisement des ascendances des conjoints.
+      if(bl.groups.length>1){
+        bl.groups.sort((A,B)=>{
+          if(A._parentAnchor!==null&&B._parentAnchor!==null&&A._parentAnchor!==B._parentAnchor)
+            return A._parentAnchor-B._parentAnchor;
+          if(A._parentAnchor!==null)return -1;
+          if(B._parentAnchor!==null)return 1;
+          return 0;
+        });
+
+        // Remet les conjoints sur les bords qui se font face.
+        for(let i=0;i<bl.groups.length-1;i++){
+          const A=bl.groups[i],B=bl.groups[i+1];
+          let pair=null;
+          for(const a of A.ids){
+            const b=getPartners(a).find(x=>B.ids.includes(x)&&(gen[x]??0)===g);
+            if(b){pair={a,b};break;}
+          }
+          if(pair){
+            A.ids=[...A.ids.filter(x=>x!==pair.a),pair.a];
+            B.ids=[pair.b,...B.ids.filter(x=>x!==pair.b)];
+          }
+        }
+      }
+
+      bl.width=bl.groups.reduce((sum,gr)=>sum+gr.width,0)
+        +Math.max(0,bl.groups.length-1)*PED_INNER_GAP;
     });
 
+    // TRÈS IMPORTANT : ordre gauche -> droite fixé par les parents déjà placés.
+    blocks.sort((A,B)=>{
+      if(A._parentAnchor!==null&&B._parentAnchor!==null&&A._parentAnchor!==B._parentAnchor)
+        return A._parentAnchor-B._parentAnchor;
+      if(A._parentAnchor!==null)return -1;
+      if(B._parentAnchor!==null)return 1;
+      if(A._fallbackScore!==null&&B._fallbackScore!==null&&A._fallbackScore!==B._fallbackScore)
+        return A._fallbackScore-B._fallbackScore;
+      return A._original-B._original;
+    });
 
-    /*
-      Évite les croisements d'ascendance entre conjoints.
-      Si deux groupes adjacents sont reliés par une union et que chacun a
-      une ancre parentale connue, on place à gauche celui dont les parents
-      sont réellement à gauche. Cela prime sur la convention homme/femme.
-    */
-    for(let i=0;i<orderedGroups.length-1;i++){
-      const A=orderedGroups[i],B=orderedGroups[i+1];
-      const linked=A.ids.some(a=>B.ids.some(b=>!!unionBetween(a,b)));
-      if(linked && A.desired!==null && B.desired!==null && A.desired>B.desired){
-        orderedGroups[i]=B; orderedGroups[i+1]=A;
-      }
-    }
-
-    // Les conjoints sans parents connus se placent à côté du conjoint ancré.
-    orderedGroups.forEach(gr=>{
-      if(gr.desired!==null)return;
-      for(const id of gr.ids){
-        const partner=getPartners(id).find(p=>(gen[p]??0)===g);
-        if(!partner)continue;
-        const other=orderedGroups.find(x=>x!==gr&&x.ids.includes(partner));
-        if(!other||other.desired===null)continue;
-        const me=data.people[id],op=data.people[partner];
-        const half=(gr.width+other.width)/2+PED_INNER_GAP;
-        gr.desired=other.desired + (me?.gender==='male'&&op?.gender==='female'?-half:half);
-        break;
+    // Position idéale de chaque bloc : exactement sous ses parents.
+    blocks.forEach(bl=>{
+      bl.desired=bl._parentAnchor;
+      if(bl.desired===null){
+        const childXs=[];
+        bl.groups.forEach(gr=>gr.ids.forEach(id=>{
+          getChildren(id).forEach(ch=>{
+            if(pos[ch])childXs.push(pos[ch].x+PED_CARD_W/2);
+          });
+        }));
+        if(childXs.length)bl.desired=childXs.reduce((a,b)=>a+b,0)/childXs.length;
       }
     });
 
-    // Première position : cible parentale, sinon flux naturel.
+    // Placement initial.
     let cursor=PED_LEFT;
-    orderedGroups.forEach(gr=>{
-      let x=gr.desired===null?cursor:gr.desired-gr.width/2;
-      x=Math.max(PED_LEFT,x);
-      gr.start=x;
-      cursor=Math.max(cursor,x+gr.width+PED_CLUSTER_GAP);
+    blocks.forEach(bl=>{
+      let start=bl.desired===null ? cursor : bl.desired-bl.width/2;
+      start=Math.max(PED_LEFT,start);
+      bl.start=start;
+      cursor=Math.max(cursor,start+bl.width+PED_CLUSTER_GAP);
     });
-
 
     /*
-      RÈGLE ABSOLUE 1 :
-      chaque fratrie reste sous ses propres ascendants.
-      Après la première passe, on recalcule la cible parentale et on rapproche
-      le groupe de cette cible dans la limite des collisions possibles.
+      Résolution des chevauchements sans modifier l'ordre parental.
+      On déplace des blocs entiers, jamais une fratrie à travers une autre.
     */
-    orderedGroups.forEach(gr=>{
-      if(gr.desired===null)return;
-      const ideal=Math.max(PED_LEFT,gr.desired-gr.width/2);
-      gr.start=ideal;
-    });
-
-    // Résolution des chevauchements avec plusieurs passes, en restant au plus près des parents.
-    for(let pass=0;pass<5;pass++){
-      for(let i=1;i<orderedGroups.length;i++){
-        const prev=orderedGroups[i-1],cur=orderedGroups[i];
-        const min=prev.start+prev.width+PED_CLUSTER_GAP;
-        if(cur.start<min)cur.start=min;
+    for(let pass=0;pass<8;pass++){
+      for(let i=1;i<blocks.length;i++){
+        const prev=blocks[i-1],cur=blocks[i];
+        const minStart=prev.start+prev.width+PED_CLUSTER_GAP;
+        if(cur.start<minStart)cur.start=minStart;
       }
-      for(let i=orderedGroups.length-2;i>=0;i--){
-        const cur=orderedGroups[i],next=orderedGroups[i+1];
-        const max=next.start-PED_CLUSTER_GAP-cur.width;
-        const ideal=cur.desired===null?cur.start:cur.desired-cur.width/2;
-        cur.start=Math.max(PED_LEFT,Math.min(cur.start,max));
-        if(ideal<cur.start&&ideal>=PED_LEFT&&ideal<=max)cur.start=ideal;
+      for(let i=blocks.length-2;i>=0;i--){
+        const cur=blocks[i],next=blocks[i+1];
+        const maxStart=next.start-PED_CLUSTER_GAP-cur.width;
+        const ideal=cur.desired===null?cur.start:Math.max(PED_LEFT,cur.desired-cur.width/2);
+        if(cur.start>maxStart)cur.start=maxStart;
+        if(ideal<=maxStart)cur.start=Math.max(PED_LEFT,ideal);
       }
     }
 
+    // Inscrit les coordonnées des personnes.
     let rowMin=Infinity,rowMax=-Infinity;
-    orderedGroups.forEach(gr=>{
-      gr.ids.forEach((id,i)=>{
-        const x=gr.start+i*(PED_CARD_W+PED_INNER_GAP);
-        pos[id]={x,y:rowY,g};
-        rowMin=Math.min(rowMin,x);rowMax=Math.max(rowMax,x+PED_CARD_W);
+    blocks.forEach(bl=>{
+      let x=bl.start;
+      bl.groups.forEach((gr,gi)=>{
+        gr.ids.forEach((id,i)=>{
+          const px=x+i*(PED_CARD_W+PED_INNER_GAP);
+          pos[id]={x:px,y:rowY,g};
+          rowMin=Math.min(rowMin,px);
+          rowMax=Math.max(rowMax,px+PED_CARD_W);
+        });
+        x+=gr.width+(gi<bl.groups.length-1?PED_INNER_GAP:0);
       });
     });
+
     if(rowMin===Infinity){rowMin=PED_LEFT;rowMax=PED_LEFT+500;}
     rowBounds[g]={min:rowMin,max:rowMax,y:rowY};
     canvasW=Math.max(canvasW,rowMax+PED_LEFT);
   });
+
+  /*
+    Dernière correction : recentre légèrement toute la toile si les premières
+    générations ont été poussées vers la droite par de grandes fratries.
+  */
+  const allX=Object.values(pos).map(p=>p.x);
+  if(allX.length){
+    const minX=Math.min(...allX);
+    if(minX>PED_LEFT+20){
+      const shift=minX-PED_LEFT;
+      Object.values(pos).forEach(p=>p.x-=shift);
+      canvasW=Math.max(1200,canvasW-shift);
+    }
+  }
 
   const canvasH=PED_TOP+gens.length*PED_ROW_STEP+80;
   return {ids,gen,gens,levels,pos,canvasW,canvasH};
@@ -1049,7 +1090,7 @@ function drawPedigreeLines(layout){
 
     items.forEach(item=>{
       const gap=Math.max(60,item.cy-item.py);
-      const laneStep=Math.min(34,Math.max(22,(gap-44)/Math.max(1,lanes.length)));
+      const laneStep=Math.min(40,Math.max(26,(gap-48)/Math.max(1,lanes.length)));
       let busY=item.py+30+item.lane*laneStep;
       busY=Math.min(busY,item.cy-30);
 
