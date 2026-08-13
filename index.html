@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Mon arbre généalogique – V6.9.0</title>
+<title>Mon arbre généalogique – V6.9.3</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 :root{
@@ -140,8 +140,8 @@ label{font-size:12px;font-weight:700;color:#665d56}
 <body>
 
 <header>
-  <h1>🌳 Mon arbre généalogique <small style="font-weight:500;color:#756b63">V6.9.0</small></h1>
-  <button class="primary" id="btnNew">+ Personne</button>
+  <h1>🌳 Mon arbre généalogique <small style="font-weight:500;color:#756b63">V6.9.3</small></h1>
+  <button class="primary" id="btnNew">+ Personne</button><button id="btnChildrenBatchTop">👨‍👩‍👧‍👦 Plusieurs enfants</button>
   <button id="btnPrintVisible">🖨️ Imprimer la branche</button>
   <button id="btnPrintFull">🖨️ Imprimer l’arbre complet</button><button id="btnCheckTree">✓ Vérifier les liens</button>
   <button id="btnExport">Exporter</button>
@@ -846,6 +846,21 @@ function buildPedigreeLayout(startId){
       gr.desired=px.length?px.reduce((a,b)=>a+b,0)/px.length:null;
     });
 
+
+    /*
+      Évite les croisements d'ascendance entre conjoints.
+      Si deux groupes adjacents sont reliés par une union et que chacun a
+      une ancre parentale connue, on place à gauche celui dont les parents
+      sont réellement à gauche. Cela prime sur la convention homme/femme.
+    */
+    for(let i=0;i<orderedGroups.length-1;i++){
+      const A=orderedGroups[i],B=orderedGroups[i+1];
+      const linked=A.ids.some(a=>B.ids.some(b=>!!unionBetween(a,b)));
+      if(linked && A.desired!==null && B.desired!==null && A.desired>B.desired){
+        orderedGroups[i]=B; orderedGroups[i+1]=A;
+      }
+    }
+
     // Les conjoints sans parents connus se placent à côté du conjoint ancré.
     orderedGroups.forEach(gr=>{
       if(gr.desired!==null)return;
@@ -868,6 +883,19 @@ function buildPedigreeLayout(startId){
       x=Math.max(PED_LEFT,x);
       gr.start=x;
       cursor=Math.max(cursor,x+gr.width+PED_CLUSTER_GAP);
+    });
+
+
+    /*
+      RÈGLE ABSOLUE 1 :
+      chaque fratrie reste sous ses propres ascendants.
+      Après la première passe, on recalcule la cible parentale et on rapproche
+      le groupe de cette cible dans la limite des collisions possibles.
+    */
+    orderedGroups.forEach(gr=>{
+      if(gr.desired===null)return;
+      const ideal=Math.max(PED_LEFT,gr.desired-gr.width/2);
+      gr.start=ideal;
     });
 
     // Résolution des chevauchements avec plusieurs passes, en restant au plus près des parents.
@@ -936,7 +964,7 @@ function drawPedigreeLines(layout){
   const path=(d,cls)=>{const p=document.createElementNS(NS,'path');p.setAttribute('d',d);p.setAttribute('class',cls);svg.appendChild(p);};
   const circle=(cx,cy)=>{const c=document.createElementNS(NS,'circle');c.setAttribute('cx',cx);c.setAttribute('cy',cy);c.setAttribute('r',4);c.setAttribute('class','unionDot');svg.appendChild(c);};
 
-  // 1. Mariages / unions : uniquement une liaison entre les deux cartes.
+  // Unions : simple liaison horizontale entre conjoints.
   data.unions.forEach(u=>{
     const A=layout.pos[u.a],B=layout.pos[u.b];if(!A||!B||A.g!==B.g)return;
     const left=A.x<=B.x?A:B,right=A.x<=B.x?B:A;
@@ -946,51 +974,102 @@ function drawPedigreeLines(layout){
   });
 
   /*
-    2. Descendance.
-    Chaque famille possède son propre canal. Si deux barres horizontales se
-    recouvrent, elles sont automatiquement placées à des hauteurs différentes.
+    RÈGLE ABSOLUE 3 :
+    aucune ligne de descendance d'une famille ne doit se confondre avec celle
+    d'une autre. Chaque famille reçoit :
+      - un tronc vertical propre ;
+      - une hauteur de barre de fratrie propre ;
+      - si nécessaire, un léger décalage horizontal de tronc.
   */
-  const fams=pedigreeFamilySets(layout).map(f=>{
+  const fams=pedigreeFamilySets(layout).map((f,idx)=>{
     const children=f.children.filter(c=>layout.pos[c]).sort((a,b)=>layout.pos[a].x-layout.pos[b].x);
     const parents=f.parents.filter(p=>layout.pos[p]);
     if(!children.length||!parents.length)return null;
+
+    const parentCenters=parents.map(p=>layout.pos[p].x+PED_CARD_W/2);
+    const childCenters=children.map(c=>layout.pos[c].x+PED_CARD_W/2);
     const py=Math.max(...parents.map(p=>layout.pos[p].y+PED_CARD_H));
     const cy=Math.min(...children.map(c=>layout.pos[c].y));
-    const originX=parents.length>=2
-      ? parents.map(p=>layout.pos[p].x+PED_CARD_W/2).reduce((a,b)=>a+b,0)/parents.length
-      : layout.pos[parents[0]].x+PED_CARD_W/2;
-    const xs=children.map(c=>layout.pos[c].x+PED_CARD_W/2);
-    return {f,children,parents,py,cy,originX,xs,minX:Math.min(originX,...xs),maxX:Math.max(originX,...xs),g:layout.pos[parents[0]].g};
+    const originBase=parentCenters.reduce((a,b)=>a+b,0)/parentCenters.length;
+    const minChild=Math.min(...childCenters),maxChild=Math.max(...childCenters);
+
+    return {
+      idx,f,children,parents,py,cy,
+      originBase,originX:originBase,childCenters,
+      minChild,maxChild,
+      minX:Math.min(originBase,minChild),
+      maxX:Math.max(originBase,maxChild),
+      g:layout.pos[parents[0]].g
+    };
   }).filter(Boolean);
 
   const byGen=new Map();
-  fams.forEach(x=>{if(!byGen.has(x.g))byGen.set(x.g,[]);byGen.get(x.g).push(x);});
+  fams.forEach(f=>{if(!byGen.has(f.g))byGen.set(f.g,[]);byGen.get(f.g).push(f);});
 
   byGen.forEach(items=>{
-    // Les petites portées d'abord : elles gardent le canal le plus proche des parents.
-    items.sort((a,b)=>(a.maxX-a.minX)-(b.maxX-b.minX));
-    const channels=[];
+    // Attribue des couloirs horizontaux distincts.
+    items.sort((a,b)=>{
+      const aw=a.maxX-a.minX,bw=b.maxX-b.minX;
+      if(aw!==bw)return aw-bw;
+      return a.originBase-b.originBase;
+    });
+
+    const lanes=[];
     items.forEach(item=>{
-      let ch=0;
+      let lane=0;
       while(true){
-        const conflicts=(channels[ch]||[]).some(iv=>
-          !(item.maxX+18<iv.minX || item.minX-18>iv.maxX)
-        );
-        if(!conflicts)break;
-        ch++;
+        const occupied=lanes[lane]||[];
+        const conflict=occupied.some(iv=>!(item.maxX+30<iv.minX || item.minX-30>iv.maxX));
+        if(!conflict)break;
+        lane++;
       }
-      if(!channels[ch])channels[ch]=[];
-      channels[ch].push({minX:item.minX,maxX:item.maxX});
-      item.channel=ch;
+      if(!lanes[lane])lanes[lane]=[];
+      lanes[lane].push({minX:item.minX,maxX:item.maxX});
+      item.lane=lane;
+    });
+
+    /*
+      Réserve aussi des colonnes de tronc distinctes si deux familles partent
+      presque du même X. Cela évite deux verticales superposées.
+    */
+    const trunkXs=[];
+    items.forEach(item=>{
+      let x=item.originBase;
+      let attempt=0;
+      while(trunkXs.some(v=>Math.abs(v-x)<18) && attempt<10){
+        const dir=attempt%2===0?1:-1;
+        x=item.originBase+dir*(18+Math.floor(attempt/2)*18);
+        attempt++;
+      }
+      trunkXs.push(x);
+      item.originX=x;
+      item.minX=Math.min(item.originX,item.minChild);
+      item.maxX=Math.max(item.originX,item.maxChild);
     });
 
     items.forEach(item=>{
-      const available=Math.max(24,item.cy-item.py-25);
-      const busY=Math.min(item.cy-28,item.py+38+item.channel*24);
-      path(`M ${item.originX} ${item.py} L ${item.originX} ${busY}`,'descentLine');
-      if(item.maxX-item.minX>1)path(`M ${item.minX} ${busY} L ${item.maxX} ${busY}`,'descentLine');
-      item.children.forEach(c=>{
-        const x=layout.pos[c].x+PED_CARD_W/2;
+      const gap=Math.max(60,item.cy-item.py);
+      const laneStep=Math.min(34,Math.max(22,(gap-44)/Math.max(1,lanes.length)));
+      let busY=item.py+30+item.lane*laneStep;
+      busY=Math.min(busY,item.cy-30);
+
+      // Tronc parental propre.
+      path(`M ${item.originBase} ${item.py} L ${item.originBase} ${item.py+14}`,'descentLine');
+      if(Math.abs(item.originX-item.originBase)>1){
+        path(`M ${item.originBase} ${item.py+14} L ${item.originX} ${item.py+14}`,'descentLine');
+      }
+      path(`M ${item.originX} ${item.py+14} L ${item.originX} ${busY}`,'descentLine');
+
+      // Barre de fratrie de CETTE famille uniquement.
+      const barMin=Math.min(item.originX,item.minChild);
+      const barMax=Math.max(item.originX,item.maxChild);
+      if(barMax-barMin>1){
+        path(`M ${barMin} ${busY} L ${barMax} ${busY}`,'descentLine');
+      }
+
+      // Une verticale indépendante vers chaque enfant.
+      item.children.forEach((c,i)=>{
+        const x=item.childCenters[i];
         path(`M ${x} ${busY} L ${x} ${layout.pos[c].y}`,'descentLine');
       });
     });
@@ -1263,15 +1342,19 @@ function bindBatchRows(){
   });
 }
 function openChildrenBatch(){
-  if(!editingId)return;
-  relationSource=editingId;
+  const sourceId=editingId || data.selectedId;
+  if(!sourceId || !data.people[sourceId]){
+    alert('Sélectionne d’abord le parent dans l’arbre.');
+    return;
+  }
+  relationSource=sourceId;
   const source=data.people[relationSource];
   const partners=getPartners(relationSource);
-  hide($('personOverlay'));
+  if(editingId)hide($('personOverlay'));
   $('childrenBatchTitle').textContent='Ajouter plusieurs enfants à '+nameOf(source);
   $('batchOtherParent').innerHTML='<option value="">— Parent non précisé —</option>'+
     partners.map(id=>`<option value="${id}">${esc(optionLabel(data.people[id]))}</option>`).join('');
-  $('batchChildrenList').innerHTML=batchChildRowHtml()+batchChildRowHtml();
+  $('batchChildrenList').innerHTML=batchChildRowHtml()+batchChildRowHtml()+batchChildRowHtml();
   bindBatchRows();
   show($('childrenBatchOverlay'));
 }
@@ -1395,7 +1478,7 @@ $('btnLogin').onclick=login;$('btnLogout').onclick=logout;$('btnSync').onclick=s
 sb.auth.onAuthStateChange((e,s)=>{currentUser=s?.user||null;setTimeout(refreshAuthUI,0);});
 $('treeSelect').onchange=function(){switchTree(this.value)};$('btnNewTree').onclick=newTree;$('btnRenameTree').onclick=renameTree;$('btnDeleteTree').onclick=deleteTree;
 $('btnNew').onclick=()=>openPerson(null);$('btnSavePerson').onclick=savePerson;$('btnCancelPerson').onclick=$('closePerson').onclick=()=>hide($('personOverlay'));
-$('btnParent').onclick=()=>openRelation('parent');$('btnPartner').onclick=()=>openRelation('partner');$('btnChild').onclick=()=>openRelation('child');$('btnChildrenBatch').onclick=openChildrenBatch;
+$('btnParent').onclick=()=>openRelation('parent');$('btnPartner').onclick=()=>openRelation('partner');$('btnChild').onclick=()=>openRelation('child');$('btnChildrenBatch').onclick=openChildrenBatch;$('btnChildrenBatchTop').onclick=openChildrenBatch;
 $('btnSaveRelation').onclick=saveRelation;$('btnCancelRelation').onclick=$('closeRelation').onclick=()=>hide($('relationOverlay'));
 $('addBatchChildRow').onclick=()=>{$('batchChildrenList').insertAdjacentHTML('beforeend',batchChildRowHtml());bindBatchRows();};
 $('saveChildrenBatch').onclick=saveChildrenBatch;
