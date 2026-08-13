@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Mon arbre généalogique – V7.3.6</title>
+<title>Mon arbre généalogique – V7.3.7</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 :root{
@@ -141,7 +141,7 @@ label{font-size:12px;font-weight:700;color:#665d56}
 <body>
 
 <header>
-  <h1>🌳 Mon arbre généalogique <small style="font-weight:500;color:#756b63">V7.3.6</small></h1>
+  <h1>🌳 Mon arbre généalogique <small style="font-weight:500;color:#756b63">V7.3.7</small></h1>
   <button class="primary" id="btnNew">+ Personne</button><button id="btnChildrenBatchTop">👨‍👩‍👧‍👦 Plusieurs enfants</button>
   <button id="btnPrintVisible">🖨️ Imprimer la branche</button>
   <button id="btnPrintFull">🖨️ Imprimer l’arbre complet</button><button id="btnCheckTree">✓ Vérifier les liens</button>
@@ -443,8 +443,12 @@ function persistLocal(){
 }
 function save(){
   data=repairGenealogyData(data);
-  const t=store.trees[store.activeTreeId]; t.data=data;t.savedAt=Date.now();
-  persistLocal();render();
+  const t=store.trees[store.activeTreeId];
+  t.data=data;
+  t.savedAt=Date.now();
+  lastLocalChangeAt=t.savedAt;
+  persistLocal();
+  render();
   if(currentUser){clearTimeout(saveTimer);saveTimer=setTimeout(pushAllTrees,800);}
 }
 function formatTime(ts){return new Date(ts).toLocaleTimeString('fr-BE',{hour:'2-digit',minute:'2-digit'});}
@@ -552,24 +556,55 @@ async function syncBothWays(){
       .eq('user_id',currentUser.id);
     if(error)throw error;
 
+    let localNeedsPush=false;
+    const seenLocalIds=new Set();
+
     if(rows&&rows.length){
       for(const r of rows){
         const localId=(r.tree_data&&r.tree_data.local_id)||('cloud_'+r.id);
-        store.trees[localId]={
-          id:localId,
-          name:r.tree_name||'Arbre',
-          data:normalizeData((r.tree_data&&r.tree_data.data)||emptyData()),
-          savedAt:(r.tree_data&&r.tree_data.saved_at)||Date.now(),
-          cloudId:r.id
-        };
+        seenLocalIds.add(localId);
+
+        const cloudSavedAt=Number((r.tree_data&&r.tree_data.saved_at)||0);
+        const localTree=store.trees[localId];
+        const localSavedAt=Number(localTree?.savedAt||0);
+
+        if(localTree && localSavedAt>cloudSavedAt){
+          // La version locale est plus récente : surtout NE PAS l'écraser.
+          localTree.cloudId=r.id;
+          localNeedsPush=true;
+        }else{
+          // Le cloud est aussi récent ou plus récent : on peut le charger.
+          store.trees[localId]={
+            id:localId,
+            name:r.tree_name||'Arbre',
+            data:normalizeData((r.tree_data&&r.tree_data.data)||emptyData()),
+            savedAt:cloudSavedAt||Date.now(),
+            cloudId:r.id
+          };
+        }
       }
+
+      // Un arbre local absent du cloud doit être envoyé, pas supprimé/recréé au hasard.
+      for(const t of Object.values(store.trees)){
+        if(!seenLocalIds.has(t.id))localNeedsPush=true;
+      }
+
       if(!store.trees[store.activeTreeId])store.activeTreeId=Object.keys(store.trees)[0];
       data=store.trees[store.activeTreeId].data;
       persistLocal();
       render();
+
+      if(localNeedsPush){
+        syncing=false;
+        clearTimeout(saveTimer);
+        await pushAllTrees();
+        return;
+      }
+
       setSyncStatus('Synchronisé depuis le cloud ✓','syncOk');
     }else{
       syncing=false;
+      clearTimeout(saveTimer);
       await pushAllTrees();
       return;
     }
@@ -1635,7 +1670,40 @@ $('saveChildrenBatch').onclick=saveChildrenBatch;
 $('cancelChildrenBatch').onclick=$('closeChildrenBatch').onclick=()=>hide($('childrenBatchOverlay'));
 $('saveUnion').onclick=saveUnion;$('cancelUnion').onclick=$('closeUnion').onclick=()=>hide($('unionOverlay'));
 $('removeUnion').onclick=()=>{if(!editingUnionId)return;if(confirm('Supprimer uniquement ce lien d’union ? Les personnes et les liens parent-enfant resteront enregistrés.')){data.unions=data.unions.filter(u=>u.id!==editingUnionId);hide($('unionOverlay'));save();}};
-$('btnDelete').onclick=()=>{if(!editingId)return;const p=data.people[editingId];if(!confirm('Supprimer '+nameOf(p)+' et ses liens familiaux ?'))return;delete data.people[editingId];data.parentLinks=data.parentLinks.filter(x=>x.parent!==editingId&&x.child!==editingId);data.unions=data.unions.filter(u=>u.a!==editingId&&u.b!==editingId);data.selectedId=Object.keys(data.people)[0]||null;hide($('personOverlay'));save();};
+$('btnDelete').onclick=async()=>{
+  if(!editingId)return;
+  const idToDelete=editingId;
+  const p=data.people[idToDelete];
+  if(!confirm('Supprimer '+nameOf(p)+' et ses liens familiaux ?'))return;
+
+  // Suppression locale complète.
+  delete data.people[idToDelete];
+  data.parentLinks=data.parentLinks.filter(x=>x.parent!==idToDelete&&x.child!==idToDelete);
+  data.unions=data.unions.filter(u=>u.a!==idToDelete&&u.b!==idToDelete);
+  collapsed.delete(idToDelete);
+  data.selectedId=Object.keys(data.people)[0]||null;
+
+  // Horodatage local AVANT toute nouvelle synchronisation.
+  data=repairGenealogyData(data);
+  const t=store.trees[store.activeTreeId];
+  t.data=data;
+  t.savedAt=Date.now();
+  lastLocalChangeAt=t.savedAt;
+  persistLocal();
+
+  hide($('personOverlay'));
+  editingId=null;
+  render();
+
+  // Annule la sauvegarde différée et pousse immédiatement la suppression dans le cloud.
+  clearTimeout(saveTimer);
+  if(currentUser){
+    const ok=await pushAllTrees();
+    if(!ok){
+      alert('La personne a été supprimée localement, mais la sauvegarde cloud a échoué. Clique sur « Synchroniser maintenant » avant de quitter la page.');
+    }
+  }
+};
 $('photoFile').onchange=async function(){const f=this.files?.[0];if(f){tempPhoto=await compressPhoto(f);updatePhotoPreview();}this.value='';};
 $('removePhoto').onclick=()=>{tempPhoto='';updatePhotoPreview();};
 $('search').oninput=renderList;
@@ -1653,8 +1721,8 @@ vp.addEventListener('pointerup',()=>{isPanning=false;vp.classList.remove('draggi
 vp.addEventListener('wheel',e=>{e.preventDefault();const r=vp.getBoundingClientRect();setZoom(viewScale*(e.deltaY<0?1.1:.9),e.clientX-r.left,e.clientY-r.top);},{passive:false});
 
 window.addEventListener('resize',()=>{if($('tree')?.querySelector('.pedigreeCanvas'))fitGraphToViewport();});
-window.addEventListener('focus',()=>{if(currentUser)syncBothWays();});
-document.addEventListener('visibilitychange',()=>{if(!document.hidden&&currentUser)syncBothWays();});
+window.addEventListener('focus',()=>{if(currentUser&&Date.now()-lastLocalChangeAt>1500)syncBothWays();});
+document.addEventListener('visibilitychange',()=>{if(!document.hidden&&currentUser&&Date.now()-lastLocalChangeAt>1500)syncBothWays();});
 
 render();resetView();refreshAuthUI();
 })();
