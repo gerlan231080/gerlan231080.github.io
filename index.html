@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Mon arbre généalogique – V7.2.1</title>
+<title>Mon arbre généalogique – V7.3.0</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 :root{
@@ -140,7 +140,7 @@ label{font-size:12px;font-weight:700;color:#665d56}
 <body>
 
 <header>
-  <h1>🌳 Mon arbre généalogique <small style="font-weight:500;color:#756b63">V7.2.1</small></h1>
+  <h1>🌳 Mon arbre généalogique <small style="font-weight:500;color:#756b63">V7.3.0</small></h1>
   <button class="primary" id="btnNew">+ Personne</button><button id="btnChildrenBatchTop">👨‍👩‍👧‍👦 Plusieurs enfants</button>
   <button id="btnPrintVisible">🖨️ Imprimer la branche</button>
   <button id="btnPrintFull">🖨️ Imprimer l’arbre complet</button><button id="btnCheckTree">✓ Vérifier les liens</button>
@@ -773,6 +773,7 @@ function pedigreeVisualBlocks(groups,genMap,g){
 
 
 
+
 function buildPedigreeLayout(startId){
   const ids=component(startId).filter(id=>!isHiddenByCollapse(id));
   const allowed=new Set(ids);
@@ -780,152 +781,176 @@ function buildPedigreeLayout(startId){
   ids.forEach(id=>(levels[gen[id]??0]||(levels[gen[id]??0]=[])).push(id));
   const gens=Object.keys(levels).map(Number).sort((a,b)=>a-b);
 
-  const pos={};
-  let canvasW=1200;
+  const unitsByGen={},unitOf={};
 
-  // Famille exacte d'un enfant = ses parentLinks réels.
-  const familyKeyOf=id=>exactParents(id,allowed).join('|') || ('ROOT:'+id);
+  // 1) Chaque couple / union devient un bloc indivisible.
+  gens.forEach(g=>{
+    const idsHere=levels[g]||[];
+    const setHere=new Set(idsHere),adj={};
+    idsHere.forEach(id=>adj[id]=new Set());
 
-  /*
-    Placement par génération mais en conservant des BLOCS FAMILIAUX :
-    - frères/sœurs du même couple restent contigus ;
-    - conjoint direct reste collé à la personne ;
-    - ordre des familles suit l'ordre de leurs parents déjà placés.
-  */
-  gens.forEach((g,rowIndex)=>{
-    const rowY=PED_TOP+rowIndex*PED_ROW_STEP;
-
-    // Groupes de fratrie exacts.
-    const famMap=new Map();
-    (levels[g]||[]).forEach(id=>{
-      const key=familyKeyOf(id);
-      if(!famMap.has(key))famMap.set(key,{key,children:[],parents:exactParents(id,allowed)});
-      famMap.get(key).children.push(id);
+    data.unions.forEach(u=>{
+      if(setHere.has(u.a)&&setHere.has(u.b)&&gen[u.a]===g&&gen[u.b]===g){
+        adj[u.a].add(u.b);adj[u.b].add(u.a);
+      }
     });
 
-    // Unités visuelles : chaque personne + son/sa conjoint(e) du même niveau.
-    const used=new Set();
-    const units=[];
-    const makeUnit=(id)=>{
-      if(used.has(id))return null;
-      const partners=getPartners(id).filter(p=>allowed.has(p)&&gen[p]===g&&!used.has(p));
-      let members=[id];
-      if(partners.length){
-        // on ne prend qu'un conjoint direct pour former le couple visuel principal
-        const p=partners[0];
-        members=[id,p];
-        used.add(p);
+    const seen=new Set(),units=[];
+    idsHere.forEach(id=>{
+      if(seen.has(id))return;
+      const q=[id],members=[];seen.add(id);
+      while(q.length){
+        const x=q.shift();members.push(x);
+        [...adj[x]].forEach(n=>{if(!seen.has(n)){seen.add(n);q.push(n);}});
       }
-      used.add(id);
 
       if(members.length===2){
         const a=data.people[members[0]],b=data.people[members[1]];
         if(a?.gender==='female'&&b?.gender==='male')members.reverse();
       }
 
-      return {
+      const u={
+        id:'U'+g+'_'+units.length,
+        g,
         members,
         width:members.length*PED_CARD_W+Math.max(0,members.length-1)*PED_INNER_GAP,
-        familyKeys:[...new Set(members.map(familyKeyOf))]
+        preds:new Set(),
+        succs:new Set(),
+        order0:units.length
       };
-    };
-
-    // construit les unités par famille pour préserver la contiguïté
-    const familyUnits=[];
-    famMap.forEach(f=>{
-      const list=[];
-      f.children
-        .slice()
-        .sort((a,b)=>birthSortValue(data.people[a])-birthSortValue(data.people[b]) ||
-                     nameOf(data.people[a]).localeCompare(nameOf(data.people[b]),'fr'))
-        .forEach(id=>{
-          if(used.has(id))return;
-          const u=makeUnit(id);if(u)list.push(u);
-        });
-
-      // ajoute les conjoints "externes" déjà absorbés par les unités ci-dessus uniquement
-      const parentCenters=f.parents.filter(p=>pos[p]).map(p=>pos[p].x+PED_CARD_W/2);
-      const anchor=parentCenters.length?parentCenters.reduce((a,b)=>a+b,0)/parentCenters.length:null;
-      const width=list.reduce((s,u)=>s+u.width,0)+Math.max(0,list.length-1)*PED_CLUSTER_GAP;
-      familyUnits.push({family:f,units:list,anchor,width});
+      units.push(u);
+      members.forEach(p=>unitOf[p]=u);
     });
-
-    // personnes sans famille non encore utilisées
-    (levels[g]||[]).forEach(id=>{
-      if(used.has(id))return;
-      const u=makeUnit(id);if(!u)return;
-      familyUnits.push({
-        family:{key:'ROOT:'+id,parents:[],children:[id]},
-        units:[u],
-        anchor:null,
-        width:u.width
-      });
-    });
-
-    // Tri strict par position réelle des parents.
-    familyUnits.sort((A,B)=>{
-      if(A.anchor!==null&&B.anchor!==null&&A.anchor!==B.anchor)return A.anchor-B.anchor;
-      if(A.anchor!==null)return -1;
-      if(B.anchor!==null)return 1;
-      const an=Math.min(...A.units.flatMap(u=>u.members.map(id=>birthSortValue(data.people[id]))));
-      const bn=Math.min(...B.units.flatMap(u=>u.members.map(id=>birthSortValue(data.people[id]))));
-      return an-bn;
-    });
-
-    // Placement initial sous les parents.
-    let cursor=PED_LEFT;
-    familyUnits.forEach(F=>{
-      F.start=F.anchor===null?cursor:Math.max(PED_LEFT,F.anchor-F.width/2);
-      cursor=Math.max(cursor,F.start+F.width+PED_CLUSTER_GAP);
-    });
-
-    // Résout les collisions sans changer l'ordre.
-    for(let pass=0;pass<10;pass++){
-      for(let i=1;i<familyUnits.length;i++){
-        const min=familyUnits[i-1].start+familyUnits[i-1].width+PED_CLUSTER_GAP;
-        if(familyUnits[i].start<min)familyUnits[i].start=min;
-      }
-      for(let i=familyUnits.length-2;i>=0;i--){
-        const F=familyUnits[i],N=familyUnits[i+1];
-        const max=N.start-PED_CLUSTER_GAP-F.width;
-        const ideal=F.anchor===null?F.start:Math.max(PED_LEFT,F.anchor-F.width/2);
-        if(F.start>max)F.start=max;
-        if(ideal<=max)F.start=Math.max(PED_LEFT,ideal);
-      }
-    }
-
-    // inscrit les positions
-    familyUnits.forEach(F=>{
-      let x=F.start;
-      F.units.forEach((u,ui)=>{
-        u.members.forEach((id,i)=>{
-          pos[id]={
-            x:x+i*(PED_CARD_W+PED_INNER_GAP),
-            y:rowY,
-            g,
-            unitKey:u.members.slice().sort().join('|')
-          };
-        });
-        x+=u.width+(ui<F.units.length-1?PED_CLUSTER_GAP:0);
-      });
-    });
-
-    const right=Math.max(...Object.values(pos).filter(p=>p.g===g).map(p=>p.x+PED_CARD_W),PED_LEFT+500);
-    canvasW=Math.max(canvasW,right+PED_LEFT);
+    unitsByGen[g]=units;
   });
 
-  const xs=Object.values(pos).map(p=>p.x);
-  if(xs.length){
-    const minX=Math.min(...xs);
-    if(minX>PED_LEFT){
-      const shift=minX-PED_LEFT;
-      Object.values(pos).forEach(p=>p.x-=shift);
-      canvasW=Math.max(1200,canvasW-shift);
+  // 2) Liens entre blocs d'après les parentLinks réels.
+  data.parentLinks.forEach(l=>{
+    if(!allowed.has(l.parent)||!allowed.has(l.child))return;
+    const up=unitOf[l.parent],uc=unitOf[l.child];
+    if(!up||!uc||up===uc)return;
+    if(uc.g===up.g+1){
+      up.succs.add(uc);uc.preds.add(up);
+    }
+  });
+
+  // 3) Ordre initial stable.
+  gens.forEach(g=>{
+    unitsByGen[g].sort((A,B)=>{
+      const ab=Math.min(...A.members.map(id=>birthSortValue(data.people[id])));
+      const bb=Math.min(...B.members.map(id=>birthSortValue(data.people[id])));
+      return ab-bb || A.order0-B.order0;
+    });
+  });
+
+  function idx(g){
+    const m=new Map();(unitsByGen[g]||[]).forEach((u,i)=>m.set(u,i));return m;
+  }
+
+  function reordered(units,neighborIndex,which){
+    return units.map((u,i)=>{
+      const ns=[...(which==='pred'?u.preds:u.succs)].filter(n=>neighborIndex.has(n));
+      const vals=ns.map(n=>neighborIndex.get(n));
+      return {u,old:i,b:vals.length?vals.reduce((a,b)=>a+b,0)/vals.length:null};
+    }).sort((A,B)=>{
+      if(A.b!==null&&B.b!==null&&Math.abs(A.b-B.b)>1e-9)return A.b-B.b;
+      if(A.b!==null&&B.b===null)return -1;
+      if(A.b===null&&B.b!==null)return 1;
+      return A.old-B.old;
+    }).map(x=>x.u);
+  }
+
+  // 4) Balayages barycentriques pour réduire les croisements.
+  for(let pass=0;pass<30;pass++){
+    for(let i=1;i<gens.length;i++){
+      const g=gens[i],pg=gens[i-1];
+      unitsByGen[g]=reordered(unitsByGen[g],idx(pg),'pred');
+    }
+    for(let i=gens.length-2;i>=0;i--){
+      const g=gens[i],ng=gens[i+1];
+      unitsByGen[g]=reordered(unitsByGen[g],idx(ng),'succ');
     }
   }
 
+  // 5) Ordre interne d'un couple selon la position de ses propres ascendants.
+  gens.forEach(g=>{
+    const pidx=idx(g-1);
+    unitsByGen[g].forEach(u=>{
+      if(u.members.length!==2)return;
+      const score=id=>{
+        const ps=exactParents(id,allowed).map(p=>unitOf[p]).filter(x=>x&&pidx.has(x));
+        if(!ps.length)return null;
+        return ps.map(x=>pidx.get(x)).reduce((a,b)=>a+b,0)/ps.length;
+      };
+      const a=score(u.members[0]),b=score(u.members[1]);
+      if(a!==null&&b!==null&&a>b)u.members.reverse();
+      else if(a===null&&b!==null)u.members.reverse();
+    });
+  });
+
+  // 6) Positions horizontales selon l'ordre obtenu.
+  const pos={},center={};
+  const GAP=90;
+  gens.forEach(g=>{
+    let x=PED_LEFT;
+    unitsByGen[g].forEach(u=>{
+      u.x=x;
+      center[u.id]=x+u.width/2;
+      x+=u.width+GAP;
+    });
+  });
+
+  function targetCenter(u){
+    const ps=[...u.preds].filter(n=>center[n.id]!==undefined);
+    if(ps.length)return ps.map(n=>center[n.id]).reduce((a,b)=>a+b,0)/ps.length;
+    const cs=[...u.succs].filter(n=>center[n.id]!==undefined);
+    if(cs.length)return cs.map(n=>center[n.id]).reduce((a,b)=>a+b,0)/cs.length;
+    return center[u.id];
+  }
+
+  // 7) Rapprochement des branches sans changer l'ordre ni faire chevaucher les blocs.
+  for(let pass=0;pass<20;pass++){
+    gens.forEach(g=>{
+      const arr=unitsByGen[g];
+      arr.forEach(u=>{
+        const ideal=targetCenter(u)-u.width/2;
+        u.x=u.x*0.5+ideal*0.5;
+      });
+
+      for(let i=1;i<arr.length;i++){
+        const min=arr[i-1].x+arr[i-1].width+GAP;
+        if(arr[i].x<min)arr[i].x=min;
+      }
+      for(let i=arr.length-2;i>=0;i--){
+        const max=arr[i+1].x-GAP-arr[i].width;
+        if(arr[i].x>max)arr[i].x=max;
+      }
+      arr.forEach(u=>center[u.id]=u.x+u.width/2);
+    });
+  }
+
+  const minX=Math.min(PED_LEFT,...gens.flatMap(g=>unitsByGen[g].map(u=>u.x)));
+  const shift=minX<PED_LEFT?PED_LEFT-minX:0;
+  let canvasW=1200;
+
+  gens.forEach((g,rowIndex)=>{
+    const y=PED_TOP+rowIndex*PED_ROW_STEP;
+    unitsByGen[g].forEach(u=>{
+      const ux=u.x+shift;
+      u.members.forEach((id,i)=>{
+        pos[id]={
+          x:ux+i*(PED_CARD_W+PED_INNER_GAP),
+          y,
+          g,
+          unitKey:u.id
+        };
+      });
+      canvasW=Math.max(canvasW,ux+u.width+PED_LEFT);
+    });
+  });
+
   const canvasH=PED_TOP+gens.length*PED_ROW_STEP+90;
-  return {ids,gen,gens,levels,pos,canvasW,canvasH};
+  return {ids,gen,gens,levels,pos,canvasW,canvasH,unitOf,unitsByGen};
 }
 function pedigreeFamilySets(layout){
   const allowed=new Set(layout.ids),families=new Map();
@@ -961,78 +986,55 @@ function drawPedigreeLines(layout){
   const path=(d,cls)=>{const p=document.createElementNS(NS,'path');p.setAttribute('d',d);p.setAttribute('class',cls);svg.appendChild(p);};
   const circle=(cx,cy)=>{const c=document.createElementNS(NS,'circle');c.setAttribute('cx',cx);c.setAttribute('cy',cy);c.setAttribute('r',4);c.setAttribute('class','unionDot');svg.appendChild(c);};
 
-  // Couples : uniquement la petite liaison entre les deux cartes.
   data.unions.forEach(u=>{
-    const A=layout.pos[u.a],B=layout.pos[u.b];if(!A||!B||A.g!==B.g)return;
+    const A=layout.pos[u.a],B=layout.pos[u.b];
+    if(!A||!B||A.g!==B.g)return;
     const left=A.x<=B.x?A:B,right=A.x<=B.x?B:A;
     const y=left.y+PED_CARD_H/2;
-    path(`M ${left.x+PED_CARD_W} ${y} L ${right.x} ${y}`,'unionLine');
-    circle((left.x+PED_CARD_W+right.x)/2,y);
+    if(A.unitKey===B.unitKey){
+      path(`M ${left.x+PED_CARD_W} ${y} L ${right.x} ${y}`,'unionLine');
+      circle((left.x+PED_CARD_W+right.x)/2,y);
+    }
   });
 
-  /*
-    V7.2.1 :
-    une famille = un seul couloir local situé ENTRE ses parents et ses enfants.
-    La barre horizontale ne s'étend JAMAIS au-delà des enfants de cette famille.
-    Le tronc venant des parents rejoint le point le plus proche de cette barre.
-    Cela évite qu'une grande ligne traverse les descendances voisines.
-  */
-  const fams=pedigreeFamilySets(layout).map((fam,idx)=>{
-    const parents=fam.parents.filter(p=>layout.pos[p]);
-    const children=fam.children.filter(c=>layout.pos[c])
-      .sort((a,b)=>layout.pos[a].x-layout.pos[b].x);
+  const fams=pedigreeFamilySets(layout).map((f,idx)=>{
+    const parents=f.parents.filter(p=>layout.pos[p]);
+    const children=f.children.filter(c=>layout.pos[c]).sort((a,b)=>layout.pos[a].x-layout.pos[b].x);
     if(!parents.length||!children.length)return null;
-
-    const childXs=children.map(c=>layout.pos[c].x+PED_CARD_W/2);
-    const minChild=Math.min(...childXs),maxChild=Math.max(...childXs);
-    const parentXs=parents.map(p=>layout.pos[p].x+PED_CARD_W/2);
-    const parentX=parentXs.reduce((a,b)=>a+b,0)/parentXs.length;
+    const pXs=parents.map(p=>layout.pos[p].x+PED_CARD_W/2);
+    const parentX=pXs.reduce((a,b)=>a+b,0)/pXs.length;
     const py=Math.max(...parents.map(p=>layout.pos[p].y+PED_CARD_H));
+    const cXs=children.map(c=>layout.pos[c].x+PED_CARD_W/2);
+    const minX=Math.min(...cXs),maxX=Math.max(...cXs);
     const cy=Math.min(...children.map(c=>layout.pos[c].y));
-    const trunkX=Math.max(minChild,Math.min(maxChild,parentX));
-    return {idx,parents,children,childXs,minChild,maxChild,parentX,trunkX,py,cy,g:layout.pos[parents[0]].g};
+    return {idx,parents,children,parentX,py,cXs,minX,maxX,cy,g:layout.pos[parents[0]].g};
   }).filter(Boolean);
 
-  // Les rares familles dont les intervalles horizontaux se recouvrent
-  // reçoivent des hauteurs distinctes, sans créer de longs détours.
-  const byGap=new Map();
-  fams.forEach(f=>{
-    const key=`${f.g}`;
-    if(!byGap.has(key))byGap.set(key,[]);
-    byGap.get(key).push(f);
-  });
+  const byG=new Map();
+  fams.forEach(f=>{if(!byG.has(f.g))byG.set(f.g,[]);byG.get(f.g).push(f);});
 
-  byGap.forEach(items=>{
-    items.sort((a,b)=>a.minChild-b.minChild || a.maxChild-b.maxChild);
+  byG.forEach(items=>{
+    items.sort((a,b)=>a.minX-b.minX||a.maxX-b.maxX);
     const lanes=[];
     items.forEach(f=>{
       let lane=0;
-      while(lanes[lane]?.some(x=>!(f.maxChild+12<x.min || f.minChild-12>x.max)))lane++;
+      while(lanes[lane]?.some(iv=>!(f.maxX+18<iv.min||f.minX-18>iv.max)))lane++;
       if(!lanes[lane])lanes[lane]=[];
-      lanes[lane].push({min:f.minChild,max:f.maxChild});
+      lanes[lane].push({min:f.minX,max:f.maxX});
       f.lane=lane;
     });
 
     items.forEach(f=>{
-      const free=Math.max(70,f.cy-f.py);
-      const laneStep=Math.min(34,Math.max(22,(free-50)/Math.max(1,lanes.length)));
-      const busY=Math.min(f.cy-28,f.py+28+f.lane*laneStep);
-
-      // Descente depuis le milieu des parents / du couple.
-      path(`M ${f.parentX} ${f.py} L ${f.parentX} ${f.py+14}`,'descentLine');
-
-      // Petit déplacement horizontal local seulement si nécessaire.
-      if(Math.abs(f.parentX-f.trunkX)>1)
-        path(`M ${f.parentX} ${f.py+14} L ${f.trunkX} ${f.py+14}`,'descentLine');
-
-      path(`M ${f.trunkX} ${f.py+14} L ${f.trunkX} ${busY}`,'descentLine');
-
-      // Barre de fratrie limitée strictement aux enfants concernés.
-      if(f.maxChild-f.minChild>1)
-        path(`M ${f.minChild} ${busY} L ${f.maxChild} ${busY}`,'descentLine');
-
+      const busY=Math.min(f.cy-28,f.py+30+f.lane*28);
+      const trunkX=Math.max(f.minX,Math.min(f.maxX,f.parentX));
+      path(`M ${f.parentX} ${f.py} L ${f.parentX} ${f.py+12}`,'descentLine');
+      if(Math.abs(trunkX-f.parentX)>1)
+        path(`M ${f.parentX} ${f.py+12} L ${trunkX} ${f.py+12}`,'descentLine');
+      path(`M ${trunkX} ${f.py+12} L ${trunkX} ${busY}`,'descentLine');
+      if(f.maxX-f.minX>1)
+        path(`M ${f.minX} ${busY} L ${f.maxX} ${busY}`,'descentLine');
       f.children.forEach((c,i)=>{
-        const x=f.childXs[i];
+        const x=f.cXs[i];
         path(`M ${x} ${busY} L ${x} ${layout.pos[c].y}`,'descentLine');
       });
     });
