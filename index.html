@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Mon arbre généalogique – V7.3.8</title>
+<title>Mon arbre généalogique – V7.3.9</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 :root{
@@ -159,14 +159,25 @@ label{font-size:12px;font-weight:700;color:#665d56}
 .pedigreeCanvas .unionLine,.pedigreeCanvas .descentLine{fill:none;stroke:#9e816b;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 .pedigreeCanvas .unionDot{fill:#9e816b}
 
+.treeTools button.moveActive{background:#6f5748!important;color:#fff!important;border-color:#6f5748!important}
+.pedigreeCanvas.moveMode .personCard{cursor:grab!important}
+.pedigreeCanvas.moveMode .personCard:active{cursor:grabbing!important}
+.pedigreeCanvas.moveMode .personCard.draggingPerson{
+  z-index:20!important;
+  box-shadow:0 7px 24px rgba(0,0,0,.22)!important;
+  outline:3px solid #6f5748!important;
+}
+
+
 </style>
 <!-- MOTEUR_LAYOUT: V736_TESTE_BECKER_DEMEUSE -->
 <!-- IMPRESSION: V738_FIT_A4_COMPLET -->
+<!-- DEPLACEMENT_MANUEL: V739_HORIZONTAL_PERSISTANT -->
 </head>
 <body>
 
 <header>
-  <h1>🌳 Mon arbre généalogique <small style="font-weight:500;color:#756b63">V7.3.8</small></h1>
+  <h1>🌳 Mon arbre généalogique <small style="font-weight:500;color:#756b63">V7.3.9</small></h1>
   <button class="primary" id="btnNew">+ Personne</button><button id="btnChildrenBatchTop">👨‍👩‍👧‍👦 Plusieurs enfants</button>
   <button id="btnPrintVisible">🖨️ Imprimer la branche</button>
   <button id="btnPrintFull">🖨️ Imprimer l’arbre complet</button><button id="btnCheckTree">✓ Vérifier les liens</button>
@@ -212,6 +223,8 @@ label{font-size:12px;font-weight:700;color:#665d56}
     <button class="small" id="zoomReset">100%</button>
     <button class="small" id="zoomIn">+</button>
     <button class="small" id="centerSelected">◎ Centrer</button>
+    <button class="small" id="toggleMoveMode">✋ Déplacer</button>
+    <button class="small" id="resetManualLayout" title="Revenir au placement automatique">↩ Disposition auto</button>
   </div>
   <div id="treeViewport"><div id="treeStage"><div id="tree"></div></div></div>
 </main>
@@ -317,10 +330,10 @@ const KEY='genealogie_multi_v1', OLD_KEY='genealogie_v2', VIEW_KEY='genealogie_v
 const $=id=>document.getElementById(id);
 let currentUser=null,syncing=false,saveTimer=null,editingId=null,relationMode=null,relationSource=null,editingUnionId=null,tempPhoto='';
 let collapsed=new Set();
-let viewScale=1,panX=20,panY=20,isPanning=false,startPan=null;
+let viewScale=1,panX=20,panY=20,isPanning=false,startPan=null,moveMode=false,dragPerson=null;
 let printRestoreCollapsed=null,printRestoreStyle=null;
 
-function emptyData(){return {people:{},parentLinks:[],unions:[],selectedId:null};}
+function emptyData(){return {people:{},parentLinks:[],unions:[],selectedId:null,manualPositions:{}};}
 
 function parseYear(s){
   const m=String(s||'').match(/(\d{4})$/);
@@ -331,6 +344,8 @@ function repairGenealogyData(d){
   d.people=d.people||{};
   d.parentLinks=Array.isArray(d.parentLinks)?d.parentLinks:[];
   d.unions=Array.isArray(d.unions)?d.unions:[];
+  d.manualPositions=(d.manualPositions&&typeof d.manualPositions==='object')?d.manualPositions:{};
+  Object.keys(d.manualPositions).forEach(id=>{if(!d.people[id])delete d.manualPositions[id];});
 
   // Supprime doublons et liens vers personnes inexistantes.
   const seenPL=new Set();
@@ -411,7 +426,12 @@ function repairGenealogyData(d){
   return d;
 }
 function normalizeData(d){
-  d=repairGenealogyData(d||emptyData()); d.people=d.people||{}; d.parentLinks=Array.isArray(d.parentLinks)?d.parentLinks:[]; d.unions=Array.isArray(d.unions)?d.unions:[]; 
+  d=repairGenealogyData(d||emptyData());
+  d.people=d.people||{};
+  d.parentLinks=Array.isArray(d.parentLinks)?d.parentLinks:[];
+  d.unions=Array.isArray(d.unions)?d.unions:[];
+  d.manualPositions=(d.manualPositions&&typeof d.manualPositions==='object')?d.manualPositions:{};
+  Object.keys(d.manualPositions).forEach(id=>{if(!d.people[id]||!Number.isFinite(Number(d.manualPositions[id])))delete d.manualPositions[id];else d.manualPositions[id]=Number(d.manualPositions[id]);});
   Object.values(d.people).forEach(p=>{ if(p.photo===undefined)p.photo=''; if(p.notes===undefined)p.notes=''; });
   d.unions.forEach(u=>{ if(!u.type)u.type='Parents / autre'; if(u.startDate===undefined)u.startDate=''; if(u.endDate===undefined)u.endDate=''; });
   return d;
@@ -1134,6 +1154,16 @@ function buildPedigreeLayout(startId){
     });
   });
 
+  // Positions manuelles : elles ne modifient QUE l'axe horizontal.
+  // La génération (y) reste celle calculée automatiquement.
+  ids.forEach(id=>{
+    const mx=Number(data.manualPositions?.[id]);
+    if(Number.isFinite(mx) && pos[id]){
+      pos[id].x=Math.max(PED_LEFT,mx);
+      canvasW=Math.max(canvasW,pos[id].x+PED_CARD_W+PED_LEFT);
+    }
+  });
+
   const canvasH=PED_TOP+gens.length*PED_ROW_STEP+90;
   return {ids,gen,gens,levels,pos,canvasW,canvasH,unitOf,unitsByGen};
 }
@@ -1160,8 +1190,100 @@ function renderPedigree(startId){
     const wrap=cardEl.parentElement;cardEl.style.left=wrap.style.left;cardEl.style.top=wrap.style.top;
     wrap.parentElement.insertBefore(cardEl,wrap);wrap.remove();
   });
-  tree.querySelectorAll('.personCard').forEach(el=>el.onclick=e=>{if(e.target.closest('.branchToggle'))return;data.selectedId=el.dataset.id;render();openPerson(el.dataset.id);});
-  tree.querySelectorAll('.branchToggle').forEach(b=>b.onclick=e=>{e.stopPropagation();const id=b.dataset.toggle;if(collapsed.has(id))collapsed.delete(id);else collapsed.add(id);render();});
+  const canvas=$('pedigreeCanvas');
+  if(moveMode)canvas?.classList.add('moveMode');
+
+  tree.querySelectorAll('.personCard').forEach(el=>{
+    el.onclick=e=>{
+      if(e.target.closest('.branchToggle'))return;
+      if(moveMode)return; // en mode déplacement, un clic ne doit pas ouvrir la fiche
+      data.selectedId=el.dataset.id;
+      render();
+      openPerson(el.dataset.id);
+    };
+
+    el.onpointerdown=e=>{
+      if(!moveMode||e.button!==0||e.target.closest('.branchToggle'))return;
+      e.preventDefault();
+      e.stopPropagation();
+
+      const id=el.dataset.id;
+      const p=layout.pos[id];
+      if(!p)return;
+
+      dragPerson={
+        id,
+        pointerId:e.pointerId,
+        startClientX:e.clientX,
+        startX:p.x,
+        layout
+      };
+      el.classList.add('draggingPerson');
+      try{el.setPointerCapture(e.pointerId);}catch(_){}
+    };
+
+    el.onpointermove=e=>{
+      if(!dragPerson||dragPerson.pointerId!==e.pointerId||dragPerson.id!==el.dataset.id)return;
+      e.preventDefault();
+      const scale=viewScale||1;
+      const dx=(e.clientX-dragPerson.startClientX)/scale;
+      const newX=Math.max(PED_LEFT,dragPerson.startX+dx);
+
+      el.style.left=newX+'px';
+      dragPerson.layout.pos[dragPerson.id].x=newX;
+
+      // Agrandit le canevas si nécessaire.
+      const pc=$('pedigreeCanvas');
+      if(pc){
+        const needed=Math.ceil(newX+PED_CARD_W+PED_LEFT);
+        if(needed>parseFloat(pc.style.width||'0')){
+          pc.style.width=needed+'px';
+          const svg=$('pedigreeLines');
+          if(svg){
+            svg.setAttribute('width',needed);
+            svg.setAttribute('viewBox',`0 0 ${needed} ${dragPerson.layout.canvasH}`);
+          }
+        }
+      }
+
+      drawPedigreeLines(dragPerson.layout);
+    };
+
+    const finishDrag=e=>{
+      if(!dragPerson||dragPerson.id!==el.dataset.id)return;
+      const id=dragPerson.id;
+      const finalX=Math.max(PED_LEFT,dragPerson.layout.pos[id].x);
+
+      data.manualPositions=data.manualPositions||{};
+      data.manualPositions[id]=Math.round(finalX);
+
+      el.classList.remove('draggingPerson');
+      dragPerson=null;
+
+      // Mémorisation locale + cloud sans recalculer immédiatement la position.
+      const t=store.trees[store.activeTreeId];
+      t.data=data;
+      t.savedAt=Date.now();
+      lastLocalChangeAt=t.savedAt;
+      persistLocal();
+      if(currentUser){
+        clearTimeout(saveTimer);
+        saveTimer=setTimeout(pushAllTrees,350);
+      }
+    };
+
+    el.onpointerup=finishDrag;
+    el.onpointercancel=finishDrag;
+  });
+
+  tree.querySelectorAll('.branchToggle').forEach(b=>b.onclick=e=>{
+    e.stopPropagation();
+    if(moveMode)return;
+    const id=b.dataset.toggle;
+    if(collapsed.has(id))collapsed.delete(id);else collapsed.add(id);
+    render();
+  });
+
   drawPedigreeLines(layout);
   requestAnimationFrame(()=>requestAnimationFrame(fitGraphToViewport));
 }
@@ -1769,6 +1891,7 @@ $('btnDelete').onclick=async()=>{
 
   // Suppression locale complète.
   delete data.people[idToDelete];
+  if(data.manualPositions)delete data.manualPositions[idToDelete];
   data.parentLinks=data.parentLinks.filter(x=>x.parent!==idToDelete&&x.child!==idToDelete);
   data.unions=data.unions.filter(u=>u.a!==idToDelete&&u.b!==idToDelete);
   collapsed.delete(idToDelete);
@@ -1800,13 +1923,30 @@ $('removePhoto').onclick=()=>{tempPhoto='';updatePhotoPreview();};
 $('search').oninput=renderList;
 $('btnRelationship').onclick=()=>{$('relationshipResult').textContent=relationLabel($('relA').value,$('relB').value);};
 $('zoomIn').onclick=()=>setZoom(viewScale+.15);$('zoomOut').onclick=()=>setZoom(viewScale-.15);$('zoomReset').onclick=fitGraphToViewport;$('centerSelected').onclick=()=>centerOnPerson(data.selectedId);
+
+$('toggleMoveMode').onclick=()=>{
+  moveMode=!moveMode;
+  dragPerson=null;
+  const b=$('toggleMoveMode');
+  b.classList.toggle('moveActive',moveMode);
+  b.textContent=moveMode?'✓ Déplacement actif':'✋ Déplacer';
+  render();
+};
+
+$('resetManualLayout').onclick=()=>{
+  if(!data.manualPositions||!Object.keys(data.manualPositions).length)return;
+  if(!confirm('Revenir au placement automatique pour toutes les personnes de cet arbre ?'))return;
+  data.manualPositions={};
+  save();
+};
+
 $('btnPrintVisible').onclick=()=>printTree(false);$('btnPrintFull').onclick=()=>printTree(true);$('btnCheckTree').onclick=checkTreeIntegrity;
 
 $('btnExport').onclick=()=>{const blob=new Blob([JSON.stringify({treeName:treeName(),data:data},null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=treeName().replace(/[^a-z0-9_-]+/gi,'-')+'.json';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);};
 $('fileImport').onchange=function(){const f=this.files?.[0];if(!f)return;const r=new FileReader();r.onload=()=>{try{const o=JSON.parse(r.result),d=normalizeData(o.data&&o.data.people?o.data:o);if(!d.people||!Array.isArray(d.parentLinks)||!Array.isArray(d.unions))throw 0;data=d;store.trees[store.activeTreeId].data=data;if(o.treeName)store.trees[store.activeTreeId].name=o.treeName;save();}catch(e){alert('Fichier non valide.');}};r.readAsText(f);this.value='';};
 
 const vp=$('treeViewport');
-vp.addEventListener('pointerdown',e=>{if(e.target.closest('.personCard')||e.target.closest('button'))return;isPanning=true;startPan={x:e.clientX,y:e.clientY,px:panX,py:panY};vp.classList.add('dragging');vp.setPointerCapture(e.pointerId);});
+vp.addEventListener('pointerdown',e=>{if(moveMode||e.target.closest('.personCard')||e.target.closest('button'))return;isPanning=true;startPan={x:e.clientX,y:e.clientY,px:panX,py:panY};vp.classList.add('dragging');vp.setPointerCapture(e.pointerId);});
 vp.addEventListener('pointermove',e=>{if(!isPanning)return;panX=startPan.px+e.clientX-startPan.x;panY=startPan.py+e.clientY-startPan.y;applyView();});
 vp.addEventListener('pointerup',()=>{isPanning=false;vp.classList.remove('dragging');});
 vp.addEventListener('wheel',e=>{e.preventDefault();const r=vp.getBoundingClientRect();setZoom(viewScale*(e.deltaY<0?1.1:.9),e.clientX-r.left,e.clientY-r.top);},{passive:false});
