@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Mon arbre généalogique – V7.3.9</title>
+<title>Mon arbre généalogique – V7.3.10</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 :root{
@@ -173,11 +173,57 @@ label{font-size:12px;font-weight:700;color:#665d56}
 <!-- MOTEUR_LAYOUT: V736_TESTE_BECKER_DEMEUSE -->
 <!-- IMPRESSION: V738_FIT_A4_COMPLET -->
 <!-- DEPLACEMENT_MANUEL: V739_HORIZONTAL_PERSISTANT -->
+
+<style>
+@media print {
+  html, body,
+  #treeViewport,
+  #treeStage,
+  #tree,
+  .pedigreeCanvas {
+    background: #ffffff !important;
+  }
+
+  .pedigreeCanvas,
+  .pedigreeCanvas * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    color-adjust: exact !important;
+  }
+
+  .personCard {
+    border: 1.5px solid #d8c8ba !important;
+    box-shadow: none !important;
+    color: #222 !important;
+  }
+
+  .personCard.male {
+    background: #dcecfb !important;
+  }
+
+  .personCard.female {
+    background: #f8e2eb !important;
+  }
+
+  .personCard.other {
+    background: #ece7f6 !important;
+  }
+
+  .pedigreeCanvas svg,
+  .pedigreeCanvas path,
+  .pedigreeCanvas line {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+}
+</style>
+
+<!-- IMPRESSION_COULEUR: V7310 -->
 </head>
 <body>
 
 <header>
-  <h1>🌳 Mon arbre généalogique <small style="font-weight:500;color:#756b63">V7.3.9</small></h1>
+  <h1>🌳 Mon arbre généalogique <small style="font-weight:500;color:#756b63">V7.3.10</small></h1>
   <button class="primary" id="btnNew">+ Personne</button><button id="btnChildrenBatchTop">👨‍👩‍👧‍👦 Plusieurs enfants</button>
   <button id="btnPrintVisible">🖨️ Imprimer la branche</button>
   <button id="btnPrintFull">🖨️ Imprimer l’arbre complet</button><button id="btnCheckTree">✓ Vérifier les liens</button>
