@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Mon arbre généalogique – V7.3.10</title>
+<title>Mon arbre généalogique – V7.3.11</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 :root{
@@ -172,7 +172,7 @@ label{font-size:12px;font-weight:700;color:#665d56}
 </style>
 <!-- MOTEUR_LAYOUT: V736_TESTE_BECKER_DEMEUSE -->
 <!-- IMPRESSION: V738_FIT_A4_COMPLET -->
-<!-- DEPLACEMENT_MANUEL: V739_HORIZONTAL_PERSISTANT -->
+<!-- DEPLACEMENT_MANUEL: V7311_CARTES_ET_PANORAMIQUE -->
 
 <style>
 @media print {
@@ -223,7 +223,7 @@ label{font-size:12px;font-weight:700;color:#665d56}
 <body>
 
 <header>
-  <h1>🌳 Mon arbre généalogique <small style="font-weight:500;color:#756b63">V7.3.10</small></h1>
+  <h1>🌳 Mon arbre généalogique <small style="font-weight:500;color:#756b63">V7.3.11</small></h1>
   <button class="primary" id="btnNew">+ Personne</button><button id="btnChildrenBatchTop">👨‍👩‍👧‍👦 Plusieurs enfants</button>
   <button id="btnPrintVisible">🖨️ Imprimer la branche</button>
   <button id="btnPrintFull">🖨️ Imprimer l’arbre complet</button><button id="btnCheckTree">✓ Vérifier les liens</button>
@@ -1992,9 +1992,34 @@ $('btnExport').onclick=()=>{const blob=new Blob([JSON.stringify({treeName:treeNa
 $('fileImport').onchange=function(){const f=this.files?.[0];if(!f)return;const r=new FileReader();r.onload=()=>{try{const o=JSON.parse(r.result),d=normalizeData(o.data&&o.data.people?o.data:o);if(!d.people||!Array.isArray(d.parentLinks)||!Array.isArray(d.unions))throw 0;data=d;store.trees[store.activeTreeId].data=data;if(o.treeName)store.trees[store.activeTreeId].name=o.treeName;save();}catch(e){alert('Fichier non valide.');}};r.readAsText(f);this.value='';};
 
 const vp=$('treeViewport');
-vp.addEventListener('pointerdown',e=>{if(moveMode||e.target.closest('.personCard')||e.target.closest('button'))return;isPanning=true;startPan={x:e.clientX,y:e.clientY,px:panX,py:panY};vp.classList.add('dragging');vp.setPointerCapture(e.pointerId);});
-vp.addEventListener('pointermove',e=>{if(!isPanning)return;panX=startPan.px+e.clientX-startPan.x;panY=startPan.py+e.clientY-startPan.y;applyView();});
-vp.addEventListener('pointerup',()=>{isPanning=false;vp.classList.remove('dragging');});
+// Navigation dans l'arbre : même lorsque le mode « Déplacement » est actif,
+// un glisser sur une zone vide déplace la vue complète. Un glisser sur une
+// fiche reste réservé au déplacement manuel de cette personne.
+vp.addEventListener('pointerdown',e=>{
+  if(e.button!==0||e.target.closest('.personCard')||e.target.closest('button'))return;
+  e.preventDefault();
+  isPanning=true;
+  startPan={x:e.clientX,y:e.clientY,px:panX,py:panY,pointerId:e.pointerId};
+  vp.classList.add('dragging');
+  try{vp.setPointerCapture(e.pointerId);}catch(_){}
+});
+vp.addEventListener('pointermove',e=>{
+  if(!isPanning||!startPan||startPan.pointerId!==e.pointerId)return;
+  e.preventDefault();
+  panX=startPan.px+e.clientX-startPan.x;
+  panY=startPan.py+e.clientY-startPan.y;
+  applyView();
+});
+const finishPan=e=>{
+  if(!isPanning)return;
+  if(e&&startPan&&e.pointerId!==undefined&&startPan.pointerId!==e.pointerId)return;
+  isPanning=false;
+  startPan=null;
+  vp.classList.remove('dragging');
+};
+vp.addEventListener('pointerup',finishPan);
+vp.addEventListener('pointercancel',finishPan);
+vp.addEventListener('lostpointercapture',finishPan);
 vp.addEventListener('wheel',e=>{e.preventDefault();const r=vp.getBoundingClientRect();setZoom(viewScale*(e.deltaY<0?1.1:.9),e.clientX-r.left,e.clientY-r.top);},{passive:false});
 
 window.addEventListener('resize',()=>{if($('tree')?.querySelector('.pedigreeCanvas'))fitGraphToViewport();});
