@@ -189,7 +189,7 @@ label{font-size:12px;font-weight:700;color:#665d56}
 
 </style>
 <!-- MOTEUR_LAYOUT: V736_TESTE_BECKER_DEMEUSE -->
-<!-- IMPRESSION: V7316_MOSAIQUE_VRAIES_PAGES_40x20MM -->
+<!-- IMPRESSION: V7317_MOSAIQUE_DOM_COURANT_40x20MM -->
 <!-- DEPLACEMENT_MANUEL: V7311_CARTES_ET_PANORAMIQUE -->
 
 <style>
@@ -1972,62 +1972,92 @@ function cleanPrintClone(source){
   return clone;
 }
 function printMultiPage(){
-  // On ouvre immédiatement la fenêtre d'impression depuis le clic utilisateur.
-  // Cela isole complètement l'impression des styles de l'application principale.
-  const printWin=window.open('','_blank');
-  if(!printWin){alert('Le navigateur a bloqué la fenêtre d’impression. Autorise les fenêtres pop-up pour ce site puis réessaie.');return;}
-
+  // V7.3.17 : impression mosaïque construite DANS le document courant.
+  // Chaque morceau devient un bloc de page réel avant l'appel à window.print().
   printRestoreCollapsed=new Set(collapsed);
   collapsed.clear();
   render();
+  resetView();
 
   requestAnimationFrame(()=>requestAnimationFrame(()=>{
     const source=$('pedigreeCanvas');
-    if(!source){printWin.close();return;}
+    if(!source)return;
+
     const sp=multiPageSpec();
     const w=Math.max(source.offsetWidth,parseFloat(source.style.width)||0);
     const h=Math.max(source.offsetHeight,parseFloat(source.style.height)||0);
-    const cols=Math.max(1,Math.ceil(w/sp.w)),rows=Math.max(1,Math.ceil(h/sp.h));
+    const cols=Math.max(1,Math.ceil(w/sp.w));
+    const rows=Math.max(1,Math.ceil(h/sp.h));
     const total=cols*rows;
-    const cloneHTML=cleanPrintClone(source).outerHTML;
 
-    // Reprend les styles de l'application pour conserver couleurs, textes et lignes.
-    const appStyles=[...document.querySelectorAll('style')].map(x=>x.textContent).join('\n');
-    let sheets='';
-    for(let r=0;r<rows;r++)for(let c=0;c<cols;c++){
-      const n=r*cols+c+1;
-      sheets+=`<section class="mosaicSheet" data-page="${n}">
-        <div class="mosaicScale" style="transform:scale(${sp.sx},${sp.sy})">
-          <div class="mosaicOffset" style="left:${-c*sp.w}px;top:${-r*sp.h}px">${cloneHTML}</div>
-        </div>
-      </section>`;
+    const printTiles=$('printTiles');
+    printTiles.innerHTML='';
+
+    // Style @page créé dynamiquement selon le format choisi.
+    let dyn=$('multiPageDynamicPrintStyle');
+    if(!dyn){
+      dyn=document.createElement('style');
+      dyn.id='multiPageDynamicPrintStyle';
+      document.head.appendChild(dyn);
+    }
+    dyn.textContent=`
+      @media print{
+        @page{size:${sp.cssPage};margin:${sp.marginMm}mm}
+        body.multiPagePrinting{margin:0!important;padding:0!important;background:#fff!important}
+        body.multiPagePrinting > *:not(#printTiles){display:none!important}
+        body.multiPagePrinting #printTiles{display:block!important;position:static!important;width:auto!important;height:auto!important;margin:0!important;padding:0!important}
+        body.multiPagePrinting #printTiles .printTile{
+          display:block!important;position:relative!important;
+          width:${sp.usableWmm}mm!important;height:${sp.usableHmm}mm!important;
+          margin:0!important;padding:0!important;overflow:hidden!important;
+          box-sizing:border-box!important;background:#fff!important;
+          break-after:page!important;page-break-after:always!important;
+          break-inside:avoid!important;page-break-inside:avoid!important;
+        }
+        body.multiPagePrinting #printTiles .printTile:last-child{break-after:auto!important;page-break-after:auto!important}
+        body.multiPagePrinting #printTiles .printTileInner{
+          position:absolute!important;transform-origin:0 0!important;
+        }
+        body.multiPagePrinting #printTiles .pedigreeCanvas{
+          position:relative!important;margin:0!important;padding:0!important;
+          overflow:visible!important;background:#fff!important;
+          transform:none!important;
+        }
+        body.multiPagePrinting #printTiles .personCard{
+          box-shadow:none!important;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;
+        }
+        body.multiPagePrinting #printTiles .pageGuides,
+        body.multiPagePrinting #printTiles .branchToggle{display:none!important}
+      }`;
+
+    for(let r=0;r<rows;r++){
+      for(let c=0;c<cols;c++){
+        const tile=document.createElement('section');
+        tile.className='printTile';
+        tile.dataset.page=String(r*cols+c+1);
+
+        const inner=document.createElement('div');
+        inner.className='printTileInner';
+        // Le décalage est exprimé après mise à l'échelle afin que chaque feuille
+        // montre exactement le rectangle logique matérialisé par les pointillés.
+        inner.style.left=(-c*sp.w*sp.sx)+'px';
+        inner.style.top=(-r*sp.h*sp.sy)+'px';
+        inner.style.transform=`scale(${sp.sx},${sp.sy})`;
+
+        const clone=cleanPrintClone(source);
+        inner.appendChild(clone);
+        tile.appendChild(inner);
+        printTiles.appendChild(tile);
+      }
     }
 
-    const title=esc(treeName())+' — '+total+' page'+(total>1?'s':'');
-    printWin.document.open();
-    printWin.document.write(`<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>${title}</title>
-      <style>${appStyles}</style>
-      <style>
-        @page{size:${sp.cssPage};margin:${sp.marginMm}mm}
-        html,body{margin:0!important;padding:0!important;background:#fff!important;width:auto!important;height:auto!important;overflow:visible!important}
-        body>*{box-sizing:border-box}
-        .mosaicSheet{position:relative!important;width:${sp.usableWmm}mm!important;height:${sp.usableHmm}mm!important;margin:0!important;padding:0!important;overflow:hidden!important;background:#fff!important;break-after:page!important;page-break-after:always!important;break-inside:avoid!important;page-break-inside:avoid!important}
-        .mosaicSheet:last-child{break-after:auto!important;page-break-after:auto!important}
-        .mosaicScale{position:absolute!important;left:0!important;top:0!important;transform-origin:0 0!important}
-        .mosaicOffset{position:absolute!important}
-        .pedigreeCanvas{position:relative!important;overflow:visible!important;background:#fff!important;margin:0!important;padding:0!important}
-        .personCard{box-shadow:none!important;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
-        .pageGuides,.treeTools,.branchToggle{display:none!important}
-        svg,path,line{overflow:visible!important;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
-      </style></head><body>${sheets}</body></html>`);
-    printWin.document.close();
+    multiPagePrinting=true;
+    document.body.classList.add('multiPagePrinting');
 
-    // Restaure aussitôt l'affichage normal dans l'application principale.
-    if(printRestoreCollapsed){collapsed=new Set(printRestoreCollapsed);printRestoreCollapsed=null;render();resetView();}
+    // Diagnostic visible dans le titre de l'aperçu si besoin.
+    console.log(`Impression mosaïque : ${cols} x ${rows} = ${total} pages`);
 
-    const launch=()=>{try{printWin.focus();printWin.print();}catch(e){console.error(e);}};
-    if(printWin.document.readyState==='complete')setTimeout(launch,350);
-    else printWin.addEventListener('load',()=>setTimeout(launch,350),{once:true});
+    setTimeout(()=>window.print(),250);
   }));
 }
 
@@ -2046,7 +2076,7 @@ function printTree(full){
 }
 
 window.addEventListener('afterprint',()=>{
-  if(multiPagePrinting){document.body.classList.remove('multiPagePrinting');$('printTiles').innerHTML='';multiPagePrinting=false;}
+  if(multiPagePrinting){document.body.classList.remove('multiPagePrinting');$('printTiles').innerHTML='';const ds=$('multiPageDynamicPrintStyle');if(ds)ds.remove();multiPagePrinting=false;}
   restorePrintScale();
   if(printRestoreCollapsed){
     collapsed=new Set(printRestoreCollapsed);
