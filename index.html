@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Mon arbre généalogique – V7.3.22</title>
+<title>Mon arbre généalogique – V7.3.23</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 :root{
@@ -189,7 +189,7 @@ label{font-size:12px;font-weight:700;color:#665d56}
 
 </style>
 <!-- MOTEUR_LAYOUT: V736_TESTE_BECKER_DEMEUSE -->
-<!-- IMPRESSION: V7317_MOSAIQUE_DOM_COURANT_40x20MM -->
+<!-- IMPRESSION: V7323_MOSAIQUE_ALIGNEE_GUIDES_ET_COUPURES_MINIMISEES -->
 <!-- DEPLACEMENT_MANUEL: V7311_CARTES_ET_PANORAMIQUE -->
 
 <style>
@@ -239,7 +239,7 @@ label{font-size:12px;font-weight:700;color:#665d56}
 <!-- IMPRESSION_COULEUR: V7310 -->
 
 <style>
-/* V7.3.22 - GSM + symbole sexe visible en bas a droite */
+/* V7.3.23 - GSM + symbole sexe visible en bas a droite */
 .personCard{min-width:151px!important;width:151px!important;min-height:76px!important;height:76px!important;padding:7px 22px 7px 10px!important;box-sizing:border-box!important;}
 .personCard .surname,.personCard .firstname{font-size:16px!important;line-height:1.08!important;white-space:normal!important;overflow:visible!important;text-overflow:clip!important;word-break:normal!important;overflow-wrap:anywhere!important;}
 .personCard .meta{font-size:12.5px!important;line-height:1.12!important;margin-top:3px!important;}
@@ -255,7 +255,7 @@ label{font-size:12px;font-weight:700;color:#665d56}
  .personCard .cardPhoto{display:none!important;}
 }
 
-/* V7.3.22 - symbole de sexe garanti par pseudo-element */
+/* V7.3.23 - symbole de sexe garanti par pseudo-element */
 .personCard.male::after,.personCard.female::after,.personCard.other::after{
   position:absolute!important;right:7px!important;bottom:6px!important;
   font-size:18px!important;font-weight:900!important;line-height:1!important;
@@ -273,7 +273,7 @@ label{font-size:12px;font-weight:700;color:#665d56}
 <body>
 
 <header>
-  <h1>🌳 Mon arbre généalogique <small style="font-weight:500;color:#756b63">V7.3.22</small></h1>
+  <h1>🌳 Mon arbre généalogique <small style="font-weight:500;color:#756b63">V7.3.23</small></h1>
   <button class="primary" id="btnNew">+ Personne</button><button id="btnChildrenBatchTop">👨‍👩‍👧‍👦 Plusieurs enfants</button>
   <button id="btnPrintVisible">🖨️ Imprimer la branche</button>
   <button id="btnPrintFull">🖨️ Imprimer l’arbre complet</button>
@@ -906,7 +906,7 @@ function card(id){
 }
 
 
-const PED_CARD_W=190,PED_CARD_H=110,PED_INNER_GAP=26,PED_CLUSTER_GAP=90,PED_ROW_STEP=250,PED_LEFT=90,PED_TOP=70;
+const PED_CARD_W=190,PED_CARD_H=110,PED_INNER_GAP=24,PED_CLUSTER_GAP=80,PED_ROW_STEP=220,PED_LEFT=90,PED_TOP=70;
 
 function pedigreeParents(id,allowed=null){
   let parents=getParents(id).filter(p=>!allowed||allowed.has(p));
@@ -1960,40 +1960,109 @@ function multiPageSpec(){
   const sp={...(specs[v]||specs.A4L)};
   const marginMm=5;
 
-  // Taille PHYSIQUE souhaitée sur papier : environ 40 x 20 mm par fiche.
-  // À l'écran, une fiche mesure 190 x 110 px : on calcule séparément X et Y.
-  const cardWpx=190,cardHpx=110;
+  // Les fiches visibles font 151 x 76 px. On les imprime physiquement à +/- 40 x 20 mm.
+  // Le facteur est donc presque 1:1 : le quadrillage écran et les vraies feuilles coïncident.
+  const cardWpx=151,cardHpx=76;
   const cardWmm=40,cardHmm=20;
   sp.sx=(cardWmm*96/25.4)/cardWpx;
   sp.sy=(cardHmm*96/25.4)/cardHpx;
   sp.marginMm=marginMm;
   sp.usableWmm=sp.paperW-marginMm*2;
   sp.usableHmm=sp.paperH-marginMm*2;
-
-  // Nombre de pixels logiques de l'arbre visibles sur UNE feuille.
   sp.w=(sp.usableWmm*96/25.4)/sp.sx;
   sp.h=(sp.usableHmm*96/25.4)/sp.sy;
   return sp;
 }
+
 function removePageGuides(){document.querySelectorAll('.pageGuides').forEach(x=>x.remove());}
+
+// Compte combien de fiches et de lignes seraient coupées à une coordonnée donnée.
+// Cela permet de décaler légèrement un saut de page vers une zone plus propre.
+function cutScore(canvas,axis,coord){
+  let cardCuts=0,lineCuts=0;
+  const cards=[...canvas.querySelectorAll('.personCard')];
+  for(const el of cards){
+    const a=axis==='x'?el.offsetLeft:el.offsetTop;
+    const b=a+(axis==='x'?el.offsetWidth:el.offsetHeight);
+    if(coord>a+2&&coord<b-2)cardCuts++;
+  }
+  const paths=[...canvas.querySelectorAll('svg path')];
+  for(const path of paths){
+    try{
+      const len=path.getTotalLength();
+      if(!Number.isFinite(len)||len<=0)continue;
+      let prev=path.getPointAtLength(0);
+      const steps=Math.max(2,Math.ceil(len/10));
+      let crossed=false;
+      for(let i=1;i<=steps;i++){
+        const pt=path.getPointAtLength(len*i/steps);
+        const a=axis==='x'?prev.x:prev.y;
+        const b=axis==='x'?pt.x:pt.y;
+        if((a<coord&&b>=coord)||(b<coord&&a>=coord)){crossed=true;break;}
+        prev=pt;
+      }
+      if(crossed)lineCuts++;
+    }catch(e){}
+  }
+  return {cardCuts,lineCuts};
+}
+
+function adaptiveCuts(canvas,total,maxSpan,axis){
+  const cuts=[0];
+  let start=0,guard=0;
+  while(total-start>maxSpan+2 && guard++<100){
+    const target=start+maxSpan;
+    const from=start+maxSpan*0.72;
+    let best=target,bestValue=Infinity,bestMeta=null;
+    for(let c=from;c<=target;c+=4){
+      const m=cutScore(canvas,axis,c);
+      // Une fiche coupée est pratiquement interdite. Les lignes sont ensuite minimisées.
+      // À égalité, on préfère utiliser le maximum de la feuille.
+      const value=m.cardCuts*100000+m.lineCuts*1000+(target-c)*0.3;
+      if(value<bestValue){bestValue=value;best=c;bestMeta=m;}
+      if(m.cardCuts===0&&m.lineCuts===0&&target-c<8){best=c;bestMeta=m;break;}
+    }
+    if(best-start<maxSpan*0.55)best=target;
+    cuts.push(best);
+    start=best;
+  }
+  if(cuts[cuts.length-1]<total-1)cuts.push(total);
+  return cuts;
+}
+
+function pageCutPlan(canvas,sp){
+  const w=Math.max(canvas.offsetWidth,parseFloat(canvas.style.width)||0);
+  const h=Math.max(canvas.offsetHeight,parseFloat(canvas.style.height)||0);
+  return {
+    xCuts:adaptiveCuts(canvas,w,sp.w,'x'),
+    yCuts:adaptiveCuts(canvas,h,sp.h,'y'),
+    w,h
+  };
+}
+
 function drawPageGuides(){
   removePageGuides();
   if(!pageGuidesVisible)return;
   const canvas=$('pedigreeCanvas');if(!canvas)return;
-  const sp=multiPageSpec(),w=Math.max(canvas.offsetWidth,parseFloat(canvas.style.width)||0),h=Math.max(canvas.offsetHeight,parseFloat(canvas.style.height)||0);
-  const cols=Math.max(1,Math.ceil(w/sp.w)),rows=Math.max(1,Math.ceil(h/sp.h));
+  const sp=multiPageSpec(),plan=pageCutPlan(canvas,sp);
+  const xCuts=plan.xCuts,yCuts=plan.yCuts;
   const g=document.createElement('div');g.className='pageGuides show';
-  // Le calque couvre des feuilles entières, même au-delà de la dernière fiche.
-  g.style.width=(cols*sp.w)+'px';g.style.height=(rows*sp.h)+'px';
-  for(let x=sp.w;x<cols*sp.w;x+=sp.w){const l=document.createElement('div');l.className='pageGuideV';l.style.left=x+'px';g.appendChild(l);}
-  for(let y=sp.h;y<rows*sp.h;y+=sp.h){const l=document.createElement('div');l.className='pageGuideH';l.style.top=y+'px';g.appendChild(l);}
+  g.style.width=plan.w+'px';g.style.height=plan.h+'px';
+  for(let i=1;i<xCuts.length-1;i++){
+    const l=document.createElement('div');l.className='pageGuideV';l.style.left=xCuts[i]+'px';g.appendChild(l);
+  }
+  for(let i=1;i<yCuts.length-1;i++){
+    const l=document.createElement('div');l.className='pageGuideH';l.style.top=yCuts[i]+'px';g.appendChild(l);
+  }
+  const cols=xCuts.length-1,rows=yCuts.length-1;
   for(let r=0;r<rows;r++)for(let c=0;c<cols;c++){
     const lab=document.createElement('div');lab.className='pageGuideLabel';
-    lab.style.left=(c*sp.w+8)+'px';lab.style.top=(r*sp.h+8)+'px';
+    lab.style.left=(xCuts[c]+8)+'px';lab.style.top=(yCuts[r]+8)+'px';
     lab.textContent='Page '+(r*cols+c+1);g.appendChild(lab);
   }
   canvas.appendChild(g);
 }
+
 function cleanPrintClone(source){
   const clone=source.cloneNode(true);
   clone.removeAttribute('id');
@@ -2002,9 +2071,8 @@ function cleanPrintClone(source){
   clone.classList.remove('moveMode');
   return clone;
 }
+
 function printMultiPage(){
-  // V7.3.18 : impression mosaïque construite DANS le document courant.
-  // Chaque morceau devient un bloc de page réel avant l'appel à window.print().
   printRestoreCollapsed=new Set(collapsed);
   collapsed.clear();
   render();
@@ -2015,22 +2083,14 @@ function printMultiPage(){
     if(!source)return;
 
     const sp=multiPageSpec();
-    const w=Math.max(source.offsetWidth,parseFloat(source.style.width)||0);
-    const h=Math.max(source.offsetHeight,parseFloat(source.style.height)||0);
-    const cols=Math.max(1,Math.ceil(w/sp.w));
-    const rows=Math.max(1,Math.ceil(h/sp.h));
-    const total=cols*rows;
-
+    const plan=pageCutPlan(source,sp);
+    const xCuts=plan.xCuts,yCuts=plan.yCuts;
+    const cols=xCuts.length-1,rows=yCuts.length-1,total=cols*rows;
     const printTiles=$('printTiles');
     printTiles.innerHTML='';
 
-    // Style @page créé dynamiquement selon le format choisi.
     let dyn=$('multiPageDynamicPrintStyle');
-    if(!dyn){
-      dyn=document.createElement('style');
-      dyn.id='multiPageDynamicPrintStyle';
-      document.head.appendChild(dyn);
-    }
+    if(!dyn){dyn=document.createElement('style');dyn.id='multiPageDynamicPrintStyle';document.head.appendChild(dyn);}
     dyn.textContent=`
       @media print{
         @page{size:${sp.cssPage};margin:${sp.marginMm}mm}
@@ -2046,49 +2106,46 @@ function printMultiPage(){
           break-inside:avoid!important;page-break-inside:avoid!important;
         }
         body.multiPagePrinting #printTiles .printTile:last-child{break-after:auto!important;page-break-after:auto!important}
-        body.multiPagePrinting #printTiles .printTileInner{
-          position:absolute!important;transform-origin:0 0!important;
-        }
+        body.multiPagePrinting #printTiles .printTileInner{position:absolute!important;transform-origin:0 0!important}
         body.multiPagePrinting #printTiles .pedigreeCanvas{
-          position:relative!important;margin:0!important;padding:0!important;
-          overflow:visible!important;background:#fff!important;
-          transform:none!important;
+          position:relative!important;margin:0!important;padding:0!important;overflow:visible!important;
+          background:#fff!important;transform:none!important;
         }
+        /* IMPORTANT : on neutralise ici les dimensions @media print générales.
+           Les fiches restent 151 x 76 px dans la copie puis sont mises à l'échelle
+           exactement vers 40 x 20 mm. */
         body.multiPagePrinting #printTiles .personCard{
-          box-shadow:none!important;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;
+          width:151px!important;min-width:151px!important;height:76px!important;min-height:76px!important;
+          padding:7px 22px 7px 10px!important;box-shadow:none!important;
+          -webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;
         }
+        body.multiPagePrinting #printTiles .personCard .surname,
+        body.multiPagePrinting #printTiles .personCard .firstname{font-size:16px!important;line-height:1.08!important}
+        body.multiPagePrinting #printTiles .personCard .meta,
+        body.multiPagePrinting #printTiles .personCard .phoneLine{font-size:12.5px!important;line-height:1.12!important;margin-top:2px!important}
+        body.multiPagePrinting #printTiles .personCard.male::after,
+        body.multiPagePrinting #printTiles .personCard.female::after,
+        body.multiPagePrinting #printTiles .personCard.other::after{right:7px!important;bottom:6px!important;font-size:18px!important}
         body.multiPagePrinting #printTiles .pageGuides,
         body.multiPagePrinting #printTiles .branchToggle{display:none!important}
       }`;
 
     for(let r=0;r<rows;r++){
       for(let c=0;c<cols;c++){
-        const tile=document.createElement('section');
-        tile.className='printTile';
-        tile.dataset.page=String(r*cols+c+1);
-
-        const inner=document.createElement('div');
-        inner.className='printTileInner';
-        // Le décalage est exprimé après mise à l'échelle afin que chaque feuille
-        // montre exactement le rectangle logique matérialisé par les pointillés.
-        inner.style.left=(-c*sp.w*sp.sx)+'px';
-        inner.style.top=(-r*sp.h*sp.sy)+'px';
+        const tile=document.createElement('section');tile.className='printTile';tile.dataset.page=String(r*cols+c+1);
+        const inner=document.createElement('div');inner.className='printTileInner';
+        inner.style.left=(-xCuts[c]*sp.sx)+'px';
+        inner.style.top=(-yCuts[r]*sp.sy)+'px';
         inner.style.transform=`scale(${sp.sx},${sp.sy})`;
-
         const clone=cleanPrintClone(source);
-        inner.appendChild(clone);
-        tile.appendChild(inner);
-        printTiles.appendChild(tile);
+        inner.appendChild(clone);tile.appendChild(inner);printTiles.appendChild(tile);
       }
     }
 
     multiPagePrinting=true;
     document.body.classList.add('multiPagePrinting');
-
-    // Diagnostic visible dans le titre de l'aperçu si besoin.
-    console.log(`Impression mosaïque : ${cols} x ${rows} = ${total} pages`);
-
-    setTimeout(()=>window.print(),250);
+    console.log(`Impression mosaïque V7.3.23 : ${cols} x ${rows} = ${total} pages`,plan);
+    setTimeout(()=>window.print(),300);
   }));
 }
 
