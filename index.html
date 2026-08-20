@@ -237,6 +237,20 @@ label{font-size:12px;font-weight:700;color:#665d56}
 </style>
 
 <!-- IMPRESSION_COULEUR: V7310 -->
+
+<style>
+/* V7.3.18 - lisibilite des fiches */
+.personCard{min-width:151px!important;width:151px!important;min-height:76px!important;height:76px!important;padding:8px 10px!important;box-sizing:border-box!important;}
+.personCard .name,.personCard .personName,.personCard strong{font-size:16px!important;line-height:1.12!important;white-space:normal!important;overflow:visible!important;text-overflow:clip!important;word-break:normal!important;overflow-wrap:anywhere!important;}
+.personCard .date,.personCard .dates,.personCard small{font-size:13px!important;line-height:1.15!important;}
+.personCard .sexIcon,.personCard .genderIcon,.personCard .avatar,.personCard .personIcon{display:none!important;}
+@media print{
+ .personCard{width:4cm!important;min-width:4cm!important;height:2cm!important;min-height:2cm!important;padding:0.18cm 0.22cm!important;}
+ .personCard .name,.personCard .personName,.personCard strong{font-size:14pt!important;line-height:1.05!important;white-space:normal!important;overflow:visible!important;text-overflow:clip!important;overflow-wrap:anywhere!important;}
+ .personCard .date,.personCard .dates,.personCard small{font-size:11pt!important;line-height:1.05!important;}
+ .personCard .sexIcon,.personCard .genderIcon,.personCard .avatar,.personCard .personIcon{display:none!important;}
+}
+</style>
 </head>
 <body>
 
@@ -1972,7 +1986,7 @@ function cleanPrintClone(source){
   return clone;
 }
 function printMultiPage(){
-  // V7.3.17 : impression mosaïque construite DANS le document courant.
+  // V7.3.18 : impression mosaïque construite DANS le document courant.
   // Chaque morceau devient un bloc de page réel avant l'appel à window.print().
   printRestoreCollapsed=new Set(collapsed);
   collapsed.clear();
@@ -2197,6 +2211,21 @@ document.addEventListener('visibilitychange',()=>{if(!document.hidden&&currentUs
 const guideObserver=new MutationObserver(()=>{if(pageGuidesVisible&&!document.querySelector('.pageGuides'))requestAnimationFrame(drawPageGuides);});guideObserver.observe($('tree'),{childList:true,subtree:false});
 
 render();resetView();refreshAuthUI();
+})();
+</script>
+
+<script>
+(function(){
+  function cleanSexIcons(root=document){
+    root.querySelectorAll('.personCard').forEach(card=>{
+      card.querySelectorAll('span,div').forEach(el=>{
+        const t=(el.textContent||'').trim();
+        if((t==='♂'||t==='♀'||t==='⚥') && el.children.length===0){el.style.display='none';}
+      });
+    });
+  }
+  new MutationObserver(()=>cleanSexIcons()).observe(document.documentElement,{childList:true,subtree:true});
+  document.addEventListener('DOMContentLoaded',()=>cleanSexIcons());
 })();
 </script>
 </body>
