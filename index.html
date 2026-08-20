@@ -309,7 +309,7 @@ label{font-size:12px;font-weight:700;color:#665d56}
 <body>
 
 <header>
-  <h1>🌳 Mon arbre généalogique <small style="font-weight:500;color:#756b63">V7.3.28</small></h1>
+  <h1>🌳 Mon arbre généalogique <small style="font-weight:500;color:#756b63">V7.3.30</small></h1>
   <button class="primary" id="btnNew">+ Personne</button><button id="btnChildrenBatchTop">👨‍👩‍👧‍👦 Plusieurs enfants</button>
   <button id="btnPrintVisible">🖨️ Imprimer la branche</button>
   <button id="btnPrintFull">🖨️ Imprimer l’arbre complet</button>
@@ -2003,7 +2003,7 @@ function multiPageSpec(){
   sp.usableWmm=sp.paperW-marginMm*2;
   sp.usableHmm=sp.paperH-marginMm*2;
 
-  // V7.3.29 : calibration commune quadrillage/impression.
+  // V7.3.30 : calibration commune quadrillage/impression.
   // Edge/Windows réduit légèrement les pages physiques. On compense CE facteur
   // à la source et on applique exactement le même facteur au quadrillage.
   // Ainsi, la zone visible entre deux pointillés est celle qui remplit la feuille.
@@ -2059,21 +2059,59 @@ function drawPageGuides(){
   canvas.appendChild(g);
 }
 
+function freezeScreenStyles(source,clone){
+  /*
+     V7.3.30 — on fige le rendu ECRAN dans la copie destinée à l'impression.
+     Les règles @media print du navigateur ne peuvent donc plus recalculer
+     les largeurs, hauteurs, polices, espacements ou positions des cartes.
+  */
+  const props=[
+    'display','position','left','top','right','bottom','width','height','min-width','min-height','max-width','max-height',
+    'margin-top','margin-right','margin-bottom','margin-left','padding-top','padding-right','padding-bottom','padding-left',
+    'box-sizing','overflow','overflow-x','overflow-y','z-index','opacity','visibility',
+    'font-family','font-size','font-weight','font-style','line-height','letter-spacing','text-align','white-space','text-overflow',
+    'color','background-color','border-top-width','border-right-width','border-bottom-width','border-left-width',
+    'border-top-style','border-right-style','border-bottom-style','border-left-style',
+    'border-top-color','border-right-color','border-bottom-color','border-left-color','border-radius','box-shadow',
+    'flex','flex-basis','flex-grow','flex-shrink','align-items','justify-content','gap','transform','transform-origin'
+  ];
+  const src=[source,...source.querySelectorAll('*')];
+  const dst=[clone,...clone.querySelectorAll('*')];
+  const n=Math.min(src.length,dst.length);
+  for(let i=0;i<n;i++){
+    const cs=getComputedStyle(src[i]);
+    for(const prop of props){
+      const value=cs.getPropertyValue(prop);
+      if(value)dst[i].style.setProperty(prop,value,'important');
+    }
+  }
+}
+
 function cleanPrintClone(source){
   const clone=source.cloneNode(true);
   clone.removeAttribute('id');
   clone.querySelectorAll('[id]').forEach(e=>e.removeAttribute('id'));
   clone.querySelectorAll('.pageGuides,.branchToggle').forEach(e=>e.remove());
   clone.classList.remove('moveMode');
+  freezeScreenStyles(source,clone);
+  /* Le canevas imprimé doit rester au repère 0/0 ; seule la viewBox SVG choisit la page. */
+  clone.style.setProperty('position','relative','important');
+  clone.style.setProperty('left','0px','important');
+  clone.style.setProperty('top','0px','important');
+  clone.style.setProperty('margin','0','important');
+  clone.style.setProperty('transform','none','important');
+  clone.style.setProperty('transform-origin','0 0','important');
+  clone.style.setProperty('overflow','visible','important');
   return clone;
 }
 
 function printMultiPage(){
-  // V7.3.29 : même découpage que le quadrillage, sans modifier la présentation.
-  // Correction ciblée : utiliser CSS zoom pour l'échelle physique de la page au lieu de transform:scale().
-  // Avec Edge, zoom participe à la mise en page imprimée alors que transform peut provoquer
-  // un second "shrink-to-fit" invisible dans l'aperçu. Le contenu garde donc exactement
-  // la même géométrie mais occupe enfin la largeur prévue par le quadrillage.
+  /*
+     V7.3.30 — NOUVEAU MOTEUR : plus aucun zoom/scale CSS.
+     Chaque feuille est un SVG physique dont la viewBox est exactement
+     le rectangle affiché par le quadrillage. Horizontalement ET verticalement,
+     1 page du quadrillage = 1 page imprimée.
+  */
   printRestoreCollapsed=null;
 
   requestAnimationFrame(()=>requestAnimationFrame(()=>{
@@ -2091,112 +2129,82 @@ function printMultiPage(){
     if(!dyn){dyn=document.createElement('style');dyn.id='multiPageDynamicPrintStyle';document.head.appendChild(dyn);}
     dyn.textContent=`
       @media print{
-        /* Le navigateur reçoit une vraie feuille complète, sans marge CSS externe.
-           La marge de sécurité est créée à l'intérieur de la feuille : cela empêche
-           Edge/Windows de réduire ou recentrer automatiquement le contenu. */
-        @page{size:${sp.cssPage};margin:0}
-        html,body{margin:0!important;padding:0!important;width:auto!important;height:auto!important}
+        @page{size:${sp.cssPage};margin:0!important}
+        html,body{margin:0!important;padding:0!important;width:auto!important;height:auto!important;background:#fff!important}
         body.multiPagePrinting{margin:0!important;padding:0!important;background:#fff!important}
         body.multiPagePrinting > *:not(#printTiles){display:none!important}
-        body.multiPagePrinting #printTiles{
-          display:block!important;position:static!important;width:auto!important;height:auto!important;
-          margin:0!important;padding:0!important;background:#fff!important
-        }
-        body.multiPagePrinting #printTiles .printTile{
-          display:block!important;position:relative!important;
+        body.multiPagePrinting #printTiles{display:block!important;margin:0!important;padding:0!important;background:#fff!important}
+        body.multiPagePrinting .printTile{
+          position:relative!important;display:block!important;
           width:${sp.paperW}mm!important;height:${sp.paperH}mm!important;
-          margin:0!important;padding:0!important;overflow:hidden!important;
-          box-sizing:border-box!important;background:#fff!important;
-          break-after:page!important;page-break-after:always!important;
-          break-inside:avoid!important;page-break-inside:avoid!important
+          margin:0!important;padding:0!important;overflow:hidden!important;background:#fff!important;
+          break-after:page!important;page-break-after:always!important;break-inside:avoid!important;page-break-inside:avoid!important
         }
-        body.multiPagePrinting #printTiles .printTile:last-child{break-after:auto!important;page-break-after:auto!important}
-        body.multiPagePrinting #printTiles .printViewport{
+        body.multiPagePrinting .printTile:last-child{break-after:auto!important;page-break-after:auto!important}
+        body.multiPagePrinting .printSvg{
           position:absolute!important;left:${sp.marginMm}mm!important;top:${sp.marginMm}mm!important;
           width:${sp.usableWmm}mm!important;height:${sp.usableHmm}mm!important;
-          margin:0!important;padding:0!important;overflow:hidden!important;background:#fff!important
+          display:block!important;overflow:hidden!important;background:#fff!important
         }
-        body.multiPagePrinting #printTiles .printTileInner{
-          position:absolute!important;left:0!important;top:0!important;
-          width:${sp.w}px!important;height:${sp.h}px!important;
-          zoom:${sp.scale}!important;transform:none!important;transform-origin:0 0!important;
-          margin:0!important;padding:0!important
-        }
-        body.multiPagePrinting #printTiles .pedigreeCanvas{
-          position:relative!important;margin:0!important;padding:0!important;overflow:visible!important;
-          background:#fff!important;transform:none!important;zoom:1!important
-        }
-        /* Strictement la même géométrie que l'application. */
-        body.multiPagePrinting #printTiles .personCard{
-          width:40mm!important;min-width:40mm!important;height:20mm!important;min-height:20mm!important;
-          padding:1.8mm 2.8mm 1.8mm 2.6mm!important;box-sizing:border-box!important;
-          box-shadow:none!important;overflow:hidden!important;zoom:1!important;
+        body.multiPagePrinting .printSvg foreignObject{overflow:visible!important}
+        body.multiPagePrinting .pageGuides,
+        body.multiPagePrinting .branchToggle{display:none!important}
+        body.multiPagePrinting .pedigreeCanvas,
+        body.multiPagePrinting .pedigreeCanvas *{
           -webkit-print-color-adjust:exact!important;print-color-adjust:exact!important
         }
-        body.multiPagePrinting #printTiles .personCard .surname{
-          font-size:14px!important;line-height:1.05!important;white-space:nowrap!important;
-          overflow:hidden!important;text-overflow:clip!important;padding-right:18px!important;letter-spacing:-0.15px!important
-        }
-        body.multiPagePrinting #printTiles .personCard .firstname{
-          font-size:15px!important;line-height:1.06!important;white-space:nowrap!important;
-          overflow:hidden!important;text-overflow:clip!important;padding-right:18px!important
-        }
-        body.multiPagePrinting #printTiles .personCard .meta,
-        body.multiPagePrinting #printTiles .personCard .phoneLine{
-          font-size:11.5px!important;line-height:1.08!important;margin-top:1px!important;white-space:nowrap!important
-        }
-        body.multiPagePrinting #printTiles .personCard.male::after,
-        body.multiPagePrinting #printTiles .personCard.female::after,
-        body.multiPagePrinting #printTiles .personCard.other::after{
-          right:7px!important;bottom:6px!important;font-size:18px!important
-        }
-        body.multiPagePrinting #printTiles .pedigreeLines,
-        body.multiPagePrinting #printTiles .unionLine,
-        body.multiPagePrinting #printTiles .descentLine{
-          zoom:1!important;vector-effect:non-scaling-stroke!important
-        }
-        body.multiPagePrinting #printTiles .unionLine,
-        body.multiPagePrinting #printTiles .descentLine{stroke:#8f705a!important;stroke-width:2.35!important}
-        body.multiPagePrinting #printTiles .pageGuides,
-        body.multiPagePrinting #printTiles .branchToggle{display:none!important}
       }`;
+
+    const NS='http://www.w3.org/2000/svg';
+    const XHTML='http://www.w3.org/1999/xhtml';
 
     for(let r=0;r<rows;r++){
       for(let c=0;c<cols;c++){
+        const x0=xCuts[c],y0=yCuts[r];
+        const pageW=xCuts[c+1]-x0,pageH=yCuts[r+1]-y0;
+
         const tile=document.createElement('section');
         tile.className='printTile';
         tile.dataset.page=String(r*cols+c+1);
 
-        // Fenêtre physique correspondant exactement à la zone entre deux pointillés.
-        const viewport=document.createElement('div');
-        viewport.className='printViewport';
-        const inner=document.createElement('div');
-        inner.className='printTileInner';
-        inner.style.left='0px';
-        inner.style.top='0px';
+        const svg=document.createElementNS(NS,'svg');
+        svg.setAttribute('class','printSvg');
+        svg.setAttribute('xmlns',NS);
+        svg.setAttribute('width',sp.usableWmm+'mm');
+        svg.setAttribute('height',sp.usableHmm+'mm');
+        /* Pour les dernières pages, on garde le même span qu'une page complète :
+           pas d'agrandissement artificiel d'une page partiellement remplie. */
+        svg.setAttribute('viewBox',`${x0} ${y0} ${sp.w} ${sp.h}`);
+        svg.setAttribute('preserveAspectRatio','none');
+
+        const fo=document.createElementNS(NS,'foreignObject');
+        fo.setAttribute('x','0');fo.setAttribute('y','0');
+        fo.setAttribute('width',String(plan.w));fo.setAttribute('height',String(plan.h));
+
+        const wrap=document.createElementNS(XHTML,'div');
+        wrap.style.setProperty('position','relative','important');
+        wrap.style.setProperty('width',plan.w+'px','important');
+        wrap.style.setProperty('height',plan.h+'px','important');
+        wrap.style.setProperty('margin','0','important');
+        wrap.style.setProperty('padding','0','important');
+        wrap.style.setProperty('overflow','visible','important');
+        wrap.style.setProperty('background','#fff','important');
 
         const clone=cleanPrintClone(source);
-        clone.style.position='absolute';
-        clone.style.left=(-xCuts[c])+'px';
-        clone.style.top=(-yCuts[r])+'px';
-        // Force les dimensions logiques originales du canevas : aucun "fit" implicite.
-        clone.style.width=plan.w+'px';
-        clone.style.height=plan.h+'px';
-        clone.style.margin='0';
-        clone.style.transform='none';
-        clone.style.zoom='1';
-
-        inner.appendChild(clone);
-        viewport.appendChild(inner);
-        tile.appendChild(viewport);
+        clone.style.setProperty('width',plan.w+'px','important');
+        clone.style.setProperty('height',plan.h+'px','important');
+        wrap.appendChild(clone);
+        fo.appendChild(wrap);
+        svg.appendChild(fo);
+        tile.appendChild(svg);
         printTiles.appendChild(tile);
       }
     }
 
     multiPagePrinting=true;
     document.body.classList.add('multiPagePrinting');
-    console.log(`Impression mosaïque V7.3.29 : ${cols} x ${rows} = ${total} pages`,plan,sp);
-    setTimeout(()=>window.print(),350);
+    console.log(`Impression mosaïque V7.3.30 SVG exact : ${cols} x ${rows} = ${total} pages`,plan,sp);
+    setTimeout(()=>window.print(),500);
   }));
 }
 
