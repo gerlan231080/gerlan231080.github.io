@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Mon arbre généalogique – V7.3.23</title>
+<title>Mon arbre généalogique – V7.3.24</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 :root{
@@ -239,7 +239,7 @@ label{font-size:12px;font-weight:700;color:#665d56}
 <!-- IMPRESSION_COULEUR: V7310 -->
 
 <style>
-/* V7.3.23 - GSM + symbole sexe visible en bas a droite */
+/* V7.3.24 - GSM + symbole sexe visible en bas a droite */
 .personCard{min-width:151px!important;width:151px!important;min-height:76px!important;height:76px!important;padding:7px 22px 7px 10px!important;box-sizing:border-box!important;}
 .personCard .surname,.personCard .firstname{font-size:16px!important;line-height:1.08!important;white-space:normal!important;overflow:visible!important;text-overflow:clip!important;word-break:normal!important;overflow-wrap:anywhere!important;}
 .personCard .meta{font-size:12.5px!important;line-height:1.12!important;margin-top:3px!important;}
@@ -255,7 +255,7 @@ label{font-size:12px;font-weight:700;color:#665d56}
  .personCard .cardPhoto{display:none!important;}
 }
 
-/* V7.3.23 - symbole de sexe garanti par pseudo-element */
+/* V7.3.24 - symbole de sexe garanti par pseudo-element */
 .personCard.male::after,.personCard.female::after,.personCard.other::after{
   position:absolute!important;right:7px!important;bottom:6px!important;
   font-size:18px!important;font-weight:900!important;line-height:1!important;
@@ -273,7 +273,7 @@ label{font-size:12px;font-weight:700;color:#665d56}
 <body>
 
 <header>
-  <h1>🌳 Mon arbre généalogique <small style="font-weight:500;color:#756b63">V7.3.23</small></h1>
+  <h1>🌳 Mon arbre généalogique <small style="font-weight:500;color:#756b63">V7.3.24</small></h1>
   <button class="primary" id="btnNew">+ Personne</button><button id="btnChildrenBatchTop">👨‍👩‍👧‍👦 Plusieurs enfants</button>
   <button id="btnPrintVisible">🖨️ Imprimer la branche</button>
   <button id="btnPrintFull">🖨️ Imprimer l’arbre complet</button>
@@ -1969,8 +1969,12 @@ function multiPageSpec(){
   sp.marginMm=marginMm;
   sp.usableWmm=sp.paperW-marginMm*2;
   sp.usableHmm=sp.paperH-marginMm*2;
+  // Marge de sécurité interne en bas : la pagination s'arrête avant le bord
+  // afin qu'une génération ne soit jamais collée au bas de la feuille.
+  sp.bottomSafetyMm=15;
+  sp.contentHmm=sp.usableHmm-sp.bottomSafetyMm;
   sp.w=(sp.usableWmm*96/25.4)/sp.sx;
-  sp.h=(sp.usableHmm*96/25.4)/sp.sy;
+  sp.h=(sp.contentHmm*96/25.4)/sp.sy;
   return sp;
 }
 
@@ -2073,10 +2077,10 @@ function cleanPrintClone(source){
 }
 
 function printMultiPage(){
-  printRestoreCollapsed=new Set(collapsed);
-  collapsed.clear();
-  render();
-  resetView();
+  // IMPORTANT : on imprime exactement l'état actuellement affiché.
+  // Ne pas déplier/recalculer l'arbre ici, sinon le quadrillage visible
+  // et les pages imprimées sont calculés sur deux géométries différentes.
+  printRestoreCollapsed=null;
 
   requestAnimationFrame(()=>requestAnimationFrame(()=>{
     const source=$('pedigreeCanvas');
@@ -2144,7 +2148,7 @@ function printMultiPage(){
 
     multiPagePrinting=true;
     document.body.classList.add('multiPagePrinting');
-    console.log(`Impression mosaïque V7.3.23 : ${cols} x ${rows} = ${total} pages`,plan);
+    console.log(`Impression mosaïque V7.3.24 : ${cols} x ${rows} = ${total} pages`,plan);
     setTimeout(()=>window.print(),300);
   }));
 }
