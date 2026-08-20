@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Mon arbre généalogique – V7.3.16</title>
+<title>Mon arbre généalogique – V7.3.19</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 :root{
@@ -239,23 +239,28 @@ label{font-size:12px;font-weight:700;color:#665d56}
 <!-- IMPRESSION_COULEUR: V7310 -->
 
 <style>
-/* V7.3.18 - lisibilite des fiches */
-.personCard{min-width:151px!important;width:151px!important;min-height:76px!important;height:76px!important;padding:8px 10px!important;box-sizing:border-box!important;}
-.personCard .name,.personCard .personName,.personCard strong{font-size:16px!important;line-height:1.12!important;white-space:normal!important;overflow:visible!important;text-overflow:clip!important;word-break:normal!important;overflow-wrap:anywhere!important;}
-.personCard .date,.personCard .dates,.personCard small{font-size:13px!important;line-height:1.15!important;}
-.personCard .sexIcon,.personCard .genderIcon,.personCard .avatar,.personCard .personIcon{display:none!important;}
+/* V7.3.19 - lisibilite + GSM + symbole sexe discret */
+.personCard{min-width:151px!important;width:151px!important;min-height:76px!important;height:76px!important;padding:7px 22px 7px 10px!important;box-sizing:border-box!important;}
+.personCard .surname,.personCard .firstname{font-size:16px!important;line-height:1.08!important;white-space:normal!important;overflow:visible!important;text-overflow:clip!important;word-break:normal!important;overflow-wrap:anywhere!important;}
+.personCard .meta{font-size:12.5px!important;line-height:1.12!important;margin-top:3px!important;}
+.personCard .phoneLine{font-size:12.5px!important;line-height:1.12!important;margin-top:2px!important;white-space:nowrap!important;}
+.personCard .sexCorner{position:absolute;right:6px;bottom:5px;font-size:16px;font-weight:800;line-height:1;color:#7a6d64;opacity:.9;pointer-events:none;}
+.personCard.male .sexCorner{color:#4b84bd}.personCard.female .sexCorner{color:#c95f89}
+.personCard .cardPhoto{display:none!important;}
+.pedigreeCanvas .surname,.pedigreeCanvas .firstname{white-space:normal!important;overflow:visible!important;text-overflow:clip!important;}
 @media print{
- .personCard{width:4cm!important;min-width:4cm!important;height:2cm!important;min-height:2cm!important;padding:0.18cm 0.22cm!important;}
- .personCard .name,.personCard .personName,.personCard strong{font-size:14pt!important;line-height:1.05!important;white-space:normal!important;overflow:visible!important;text-overflow:clip!important;overflow-wrap:anywhere!important;}
- .personCard .date,.personCard .dates,.personCard small{font-size:11pt!important;line-height:1.05!important;}
- .personCard .sexIcon,.personCard .genderIcon,.personCard .avatar,.personCard .personIcon{display:none!important;}
+ .personCard{width:4cm!important;min-width:4cm!important;height:2cm!important;min-height:2cm!important;padding:0.14cm 0.46cm 0.14cm 0.18cm!important;}
+ .personCard .surname,.personCard .firstname{font-size:12.5pt!important;line-height:1.02!important;white-space:normal!important;overflow:visible!important;text-overflow:clip!important;overflow-wrap:anywhere!important;}
+ .personCard .meta,.personCard .phoneLine{font-size:9.5pt!important;line-height:1.02!important;margin-top:0.04cm!important;}
+ .personCard .sexCorner{right:0.12cm;bottom:0.08cm;font-size:12pt!important;}
+ .personCard .cardPhoto{display:none!important;}
 }
 </style>
 </head>
 <body>
 
 <header>
-  <h1>🌳 Mon arbre généalogique <small style="font-weight:500;color:#756b63">V7.3.16</small></h1>
+  <h1>🌳 Mon arbre généalogique <small style="font-weight:500;color:#756b63">V7.3.19</small></h1>
   <button class="primary" id="btnNew">+ Personne</button><button id="btnChildrenBatchTop">👨‍👩‍👧‍👦 Plusieurs enfants</button>
   <button id="btnPrintVisible">🖨️ Imprimer la branche</button>
   <button id="btnPrintFull">🖨️ Imprimer l’arbre complet</button>
@@ -319,6 +324,7 @@ label{font-size:12px;font-weight:700;color:#665d56}
     <div class="field"><label>Nom</label><input id="lastName"></div>
     <div class="field"><label>Prénom *</label><input id="firstName"></div>
     <div class="field"><label>Date de naissance</label><input id="birth" placeholder="JJ/MM/AAAA"></div>
+    <div class="field"><label>Numéro de GSM</label><input id="phone" placeholder="04xx/xx.xx.xx"></div>
     <div class="field"><label>Sexe</label><select id="gender"><option value="female">Femme</option><option value="male">Homme</option><option value="other">Autre / non précisé</option></select></div>
     <div class="field"><label>Date de décès</label><input id="death" placeholder="JJ/MM/AAAA"></div>
     <div class="field">
@@ -516,7 +522,7 @@ function normalizeData(d){
   d.unions=Array.isArray(d.unions)?d.unions:[];
   d.manualPositions=(d.manualPositions&&typeof d.manualPositions==='object')?d.manualPositions:{};
   Object.keys(d.manualPositions).forEach(id=>{if(!d.people[id]||!Number.isFinite(Number(d.manualPositions[id])))delete d.manualPositions[id];else d.manualPositions[id]=Number(d.manualPositions[id]);});
-  Object.values(d.people).forEach(p=>{ if(p.photo===undefined)p.photo=''; if(p.notes===undefined)p.notes=''; });
+  Object.values(d.people).forEach(p=>{ if(p.photo===undefined)p.photo=''; if(p.notes===undefined)p.notes=''; if(p.phone===undefined)p.phone=''; });
   d.unions.forEach(u=>{ if(!u.type)u.type='Parents / autre'; if(u.startDate===undefined)u.startDate=''; if(u.endDate===undefined)u.endDate=''; });
   return d;
 }
@@ -524,7 +530,7 @@ let store;
 try{store=JSON.parse(localStorage.getItem(KEY));}catch(e){}
 if(!store||!store.trees){
   let old=null;try{old=JSON.parse(localStorage.getItem(OLD_KEY));}catch(e){}
-  const d=old&&old.people?normalizeData(old):{people:{p1:{id:'p1',lastName:'',firstName:'Personne de départ',birth:'',gender:'female',death:'',photo:'',notes:''}},parentLinks:[],unions:[],selectedId:'p1'};
+  const d=old&&old.people?normalizeData(old):{people:{p1:{id:'p1',lastName:'',firstName:'Personne de départ',birth:'',phone:'',gender:'female',death:'',photo:'',notes:''}},parentLinks:[],unions:[],selectedId:'p1'};
   store={activeTreeId:'t1',trees:{t1:{id:'t1',name:'Mon premier arbre',data:d,savedAt:0}}};
 }
 Object.values(store.trees).forEach(t=>{t.data=normalizeData(t.data);t.savedAt=t.savedAt||0;});
@@ -869,21 +875,20 @@ function card(id){
   const unions=data.unions.filter(u=>u.a===id||u.b===id).length;
   const gender=p.gender==='male'?'male':p.gender==='female'?'female':'other';
   const symbol=p.gender==='male'?'♂':p.gender==='female'?'♀':'•';
-  const photo=p.photo
-    ? `<img class="cardPhoto" src="${p.photo}" alt="">`
-    : `<div class="cardPhoto placeholder">${symbol}</div>`;
   const meta=[
     p.birth?`Né(e) : ${esc(p.birth)}`:'',
     p.death?`Décédé(e) : ${esc(p.death)}`:''
   ].filter(Boolean).join('<br>');
   const toggle=collapsed.has(id)?'⊕':'⊖';
   return `<div class="personCard ${gender} ${id===data.selectedId?'selected':''}" data-id="${id}">
-    <div class="cardTop">${photo}<div class="cardText">
+    <div class="cardTop"><div class="cardText">
       <div class="surname">${esc(p.lastName||'')}</div>
       <div class="firstname">${esc(p.firstName||'')}</div>
       ${meta?`<div class="meta">${meta}</div>`:''}
+      ${p.phone?`<div class="phoneLine">${esc(p.phone)}</div>`:''}
       ${unions>1?`<span class="unionCount">${unions} unions</span>`:''}
     </div></div>
+    <span class="sexCorner" aria-hidden="true">${symbol}</span>
     <button type="button" class="branchToggle" data-toggle="${id}" title="Replier ou déplier la descendance">${toggle}</button>
   </div>`;
 }
@@ -1644,7 +1649,7 @@ function openPerson(id){
 }
 function savePerson(){
   const first=$('firstName').value.trim();if(!first){alert('Indique au moins un prénom.');return;}const id=editingId||uid(),old=data.people[id]||{};
-  data.people[id]={...old,id,lastName:$('lastName').value.trim(),firstName:first,birth:$('birth').value.trim(),gender:$('gender').value,death:$('death').value.trim(),photo:tempPhoto,notes:$('notes').value.trim()};
+  data.people[id]={...old,id,lastName:$('lastName').value.trim(),firstName:first,birth:$('birth').value.trim(),phone:$('phone').value.trim(),gender:$('gender').value,death:$('death').value.trim(),photo:tempPhoto,notes:$('notes').value.trim()};
   data.selectedId=id;hide($('personOverlay'));save();centerOnPerson(id);
 }
 function openRelation(mode){
