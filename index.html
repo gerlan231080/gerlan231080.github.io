@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Mon arbre généalogique – V7.3.24</title>
+<title>Mon arbre généalogique – V7.3.25</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 :root{
@@ -273,7 +273,7 @@ label{font-size:12px;font-weight:700;color:#665d56}
 <body>
 
 <header>
-  <h1>🌳 Mon arbre généalogique <small style="font-weight:500;color:#756b63">V7.3.24</small></h1>
+  <h1>🌳 Mon arbre généalogique <small style="font-weight:500;color:#756b63">V7.3.25</small></h1>
   <button class="primary" id="btnNew">+ Personne</button><button id="btnChildrenBatchTop">👨‍👩‍👧‍👦 Plusieurs enfants</button>
   <button id="btnPrintVisible">🖨️ Imprimer la branche</button>
   <button id="btnPrintFull">🖨️ Imprimer l’arbre complet</button>
@@ -906,7 +906,7 @@ function card(id){
 }
 
 
-const PED_CARD_W=190,PED_CARD_H=110,PED_INNER_GAP=24,PED_CLUSTER_GAP=80,PED_ROW_STEP=220,PED_LEFT=90,PED_TOP=70;
+const PED_CARD_W=190,PED_CARD_H=110,PED_INNER_GAP=24,PED_CLUSTER_GAP=80,PED_ROW_STEP=185,PED_LEFT=90,PED_TOP=70;
 
 function pedigreeParents(id,allowed=null){
   let parents=getParents(id).filter(p=>!allowed||allowed.has(p));
@@ -1969,68 +1969,26 @@ function multiPageSpec(){
   sp.marginMm=marginMm;
   sp.usableWmm=sp.paperW-marginMm*2;
   sp.usableHmm=sp.paperH-marginMm*2;
-  // Marge de sécurité interne en bas : la pagination s'arrête avant le bord
-  // afin qu'une génération ne soit jamais collée au bas de la feuille.
+  // Les limites de page doivent être STRICTEMENT celles du papier imprimé.
+  // On ne raccourcit donc jamais une page pour créer une marge de sécurité :
+  // la sécurité est obtenue par le placement plus compact des générations.
   sp.bottomSafetyMm=15;
-  sp.contentHmm=sp.usableHmm-sp.bottomSafetyMm;
   sp.w=(sp.usableWmm*96/25.4)/sp.sx;
-  sp.h=(sp.contentHmm*96/25.4)/sp.sy;
+  sp.h=(sp.usableHmm*96/25.4)/sp.sy;
+  sp.bottomSafety=(sp.bottomSafetyMm*96/25.4)/sp.sy;
   return sp;
 }
 
 function removePageGuides(){document.querySelectorAll('.pageGuides').forEach(x=>x.remove());}
 
-// Compte combien de fiches et de lignes seraient coupées à une coordonnée donnée.
-// Cela permet de décaler légèrement un saut de page vers une zone plus propre.
-function cutScore(canvas,axis,coord){
-  let cardCuts=0,lineCuts=0;
-  const cards=[...canvas.querySelectorAll('.personCard')];
-  for(const el of cards){
-    const a=axis==='x'?el.offsetLeft:el.offsetTop;
-    const b=a+(axis==='x'?el.offsetWidth:el.offsetHeight);
-    if(coord>a+2&&coord<b-2)cardCuts++;
-  }
-  const paths=[...canvas.querySelectorAll('svg path')];
-  for(const path of paths){
-    try{
-      const len=path.getTotalLength();
-      if(!Number.isFinite(len)||len<=0)continue;
-      let prev=path.getPointAtLength(0);
-      const steps=Math.max(2,Math.ceil(len/10));
-      let crossed=false;
-      for(let i=1;i<=steps;i++){
-        const pt=path.getPointAtLength(len*i/steps);
-        const a=axis==='x'?prev.x:prev.y;
-        const b=axis==='x'?pt.x:pt.y;
-        if((a<coord&&b>=coord)||(b<coord&&a>=coord)){crossed=true;break;}
-        prev=pt;
-      }
-      if(crossed)lineCuts++;
-    }catch(e){}
-  }
-  return {cardCuts,lineCuts};
-}
-
-function adaptiveCuts(canvas,total,maxSpan,axis){
+// V7.3.25 — pagination physique fixe.
+// Une limite affichée correspond désormais exactement au bord d'une feuille imprimée.
+function fixedCuts(total,span){
   const cuts=[0];
-  let start=0,guard=0;
-  while(total-start>maxSpan+2 && guard++<100){
-    const target=start+maxSpan;
-    const from=start+maxSpan*0.72;
-    let best=target,bestValue=Infinity,bestMeta=null;
-    for(let c=from;c<=target;c+=4){
-      const m=cutScore(canvas,axis,c);
-      // Une fiche coupée est pratiquement interdite. Les lignes sont ensuite minimisées.
-      // À égalité, on préfère utiliser le maximum de la feuille.
-      const value=m.cardCuts*100000+m.lineCuts*1000+(target-c)*0.3;
-      if(value<bestValue){bestValue=value;best=c;bestMeta=m;}
-      if(m.cardCuts===0&&m.lineCuts===0&&target-c<8){best=c;bestMeta=m;break;}
-    }
-    if(best-start<maxSpan*0.55)best=target;
-    cuts.push(best);
-    start=best;
-  }
-  if(cuts[cuts.length-1]<total-1)cuts.push(total);
+  if(!Number.isFinite(total)||!Number.isFinite(span)||span<=0)return [0,Math.max(1,total||1)];
+  let x=span,guard=0;
+  while(x<total-1&&guard++<200){cuts.push(x);x+=span;}
+  if(cuts[cuts.length-1]<total)cuts.push(total);
   return cuts;
 }
 
@@ -2038,8 +1996,8 @@ function pageCutPlan(canvas,sp){
   const w=Math.max(canvas.offsetWidth,parseFloat(canvas.style.width)||0);
   const h=Math.max(canvas.offsetHeight,parseFloat(canvas.style.height)||0);
   return {
-    xCuts:adaptiveCuts(canvas,w,sp.w,'x'),
-    yCuts:adaptiveCuts(canvas,h,sp.h,'y'),
+    xCuts:fixedCuts(w,sp.w),
+    yCuts:fixedCuts(h,sp.h),
     w,h
   };
 }
@@ -2148,7 +2106,7 @@ function printMultiPage(){
 
     multiPagePrinting=true;
     document.body.classList.add('multiPagePrinting');
-    console.log(`Impression mosaïque V7.3.24 : ${cols} x ${rows} = ${total} pages`,plan);
+    console.log(`Impression mosaïque V7.3.25 : ${cols} x ${rows} = ${total} pages`,plan);
     setTimeout(()=>window.print(),300);
   }));
 }
