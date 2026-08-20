@@ -2003,7 +2003,7 @@ function multiPageSpec(){
   sp.usableWmm=sp.paperW-marginMm*2;
   sp.usableHmm=sp.paperH-marginMm*2;
 
-  // V7.3.28 : calibration commune quadrillage/impression.
+  // V7.3.29 : calibration commune quadrillage/impression.
   // Edge/Windows réduit légèrement les pages physiques. On compense CE facteur
   // à la source et on applique exactement le même facteur au quadrillage.
   // Ainsi, la zone visible entre deux pointillés est celle qui remplit la feuille.
@@ -2069,8 +2069,11 @@ function cleanPrintClone(source){
 }
 
 function printMultiPage(){
-  // V7.3.28 : quadrillage et impression utilisent exactement la même calibration.
-  // Le facteur sp.scale compense la réduction du moteur d'impression Edge/Windows.
+  // V7.3.29 : même découpage que le quadrillage, sans modifier la présentation.
+  // Correction ciblée : utiliser CSS zoom pour l'échelle physique de la page au lieu de transform:scale().
+  // Avec Edge, zoom participe à la mise en page imprimée alors que transform peut provoquer
+  // un second "shrink-to-fit" invisible dans l'aperçu. Le contenu garde donc exactement
+  // la même géométrie mais occupe enfin la largeur prévue par le quadrillage.
   printRestoreCollapsed=null;
 
   requestAnimationFrame(()=>requestAnimationFrame(()=>{
@@ -2114,7 +2117,9 @@ function printMultiPage(){
           margin:0!important;padding:0!important;overflow:hidden!important;background:#fff!important
         }
         body.multiPagePrinting #printTiles .printTileInner{
-          position:absolute!important;transform:scale(${sp.scale})!important;transform-origin:0 0!important;
+          position:absolute!important;left:0!important;top:0!important;
+          width:${sp.w}px!important;height:${sp.h}px!important;
+          zoom:${sp.scale}!important;transform:none!important;transform-origin:0 0!important;
           margin:0!important;padding:0!important
         }
         body.multiPagePrinting #printTiles .pedigreeCanvas{
@@ -2167,10 +2172,13 @@ function printMultiPage(){
         viewport.className='printViewport';
         const inner=document.createElement('div');
         inner.className='printTileInner';
-        inner.style.left=(-xCuts[c]*sp.scale)+'px';
-        inner.style.top=(-yCuts[r]*sp.scale)+'px';
+        inner.style.left='0px';
+        inner.style.top='0px';
 
         const clone=cleanPrintClone(source);
+        clone.style.position='absolute';
+        clone.style.left=(-xCuts[c])+'px';
+        clone.style.top=(-yCuts[r])+'px';
         // Force les dimensions logiques originales du canevas : aucun "fit" implicite.
         clone.style.width=plan.w+'px';
         clone.style.height=plan.h+'px';
@@ -2187,7 +2195,7 @@ function printMultiPage(){
 
     multiPagePrinting=true;
     document.body.classList.add('multiPagePrinting');
-    console.log(`Impression mosaïque V7.3.27 : ${cols} x ${rows} = ${total} pages`,plan,sp);
+    console.log(`Impression mosaïque V7.3.29 : ${cols} x ${rows} = ${total} pages`,plan,sp);
     setTimeout(()=>window.print(),350);
   }));
 }
