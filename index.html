@@ -168,6 +168,24 @@ label{font-size:12px;font-weight:700;color:#665d56}
   outline:3px solid #6f5748!important;
 }
 
+/* V7.3.12 — repères d'impression multipages */
+.pageGuides{position:absolute;left:0;top:0;pointer-events:none;z-index:30;display:none}
+.pageGuides.show{display:block}
+.pageGuideV,.pageGuideH{position:absolute;opacity:.72}
+.pageGuideV{top:0;border-left:2px dashed #b45b5b;height:100%}
+.pageGuideH{left:0;border-top:2px dashed #b45b5b;width:100%}
+.pageGuideLabel{position:absolute;font-size:12px;font-weight:800;color:#8d4545;background:rgba(255,255,255,.88);padding:3px 6px;border-radius:5px;border:1px solid #d8b0b0}
+#printTiles{display:none}
+@media print{
+  body.multiPagePrinting > *:not(#printTiles){display:none!important}
+  body.multiPagePrinting #printTiles{display:block!important}
+  body.multiPagePrinting{background:#fff!important}
+  #printTiles .printTile{position:relative;overflow:hidden;break-after:page;page-break-after:always;background:#fff}
+  #printTiles .printTile:last-child{break-after:auto;page-break-after:auto}
+  #printTiles .printTileInner{position:absolute;left:0;top:0;transform-origin:0 0}
+  #printTiles .pageGuides{display:none!important}
+}
+
 
 </style>
 <!-- MOTEUR_LAYOUT: V736_TESTE_BECKER_DEMEUSE -->
@@ -226,7 +244,11 @@ label{font-size:12px;font-weight:700;color:#665d56}
   <h1>🌳 Mon arbre généalogique <small style="font-weight:500;color:#756b63">V7.3.11</small></h1>
   <button class="primary" id="btnNew">+ Personne</button><button id="btnChildrenBatchTop">👨‍👩‍👧‍👦 Plusieurs enfants</button>
   <button id="btnPrintVisible">🖨️ Imprimer la branche</button>
-  <button id="btnPrintFull">🖨️ Imprimer l’arbre complet</button><button id="btnCheckTree">✓ Vérifier les liens</button>
+  <button id="btnPrintFull">🖨️ Imprimer l’arbre complet</button>
+  <select id="multiPageFormat" title="Format des feuilles"><option value="A4L">A4 paysage</option><option value="A4P">A4 portrait</option><option value="A3L">A3 paysage</option><option value="A3P">A3 portrait</option></select>
+  <button id="btnPageGuides">▦ Afficher les pages</button>
+  <button id="btnPrintMulti">🖨️ Imprimer multipages</button>
+  <button id="btnCheckTree">✓ Vérifier les liens</button>
   <button id="btnExport">Exporter</button>
   <label class="fileBtn" for="fileImport">Importer</label><input type="file" id="fileImport" accept=".json,application/json">
 </header>
@@ -365,6 +387,8 @@ label{font-size:12px;font-weight:700;color:#665d56}
   <div class="modalActions"><button type="button" class="danger" id="removeUnion">Supprimer uniquement l’union</button><button type="button" id="cancelUnion">Annuler</button><button type="button" class="primary" id="saveUnion">Enregistrer</button></div>
 </div></div>
 
+<div id="printTiles"></div>
+
 <script>
 (function(){
 'use strict';
@@ -377,7 +401,7 @@ const $=id=>document.getElementById(id);
 let currentUser=null,syncing=false,saveTimer=null,editingId=null,relationMode=null,relationSource=null,editingUnionId=null,tempPhoto='';
 let collapsed=new Set();
 let viewScale=1,panX=20,panY=20,isPanning=false,startPan=null,moveMode=false,dragPerson=null;
-let printRestoreCollapsed=null,printRestoreStyle=null;
+let printRestoreCollapsed=null,printRestoreStyle=null,pageGuidesVisible=false,multiPagePrinting=false;
 
 function emptyData(){return {people:{},parentLinks:[],unions:[],selectedId:null,manualPositions:{}};}
 
@@ -1894,6 +1918,53 @@ function restorePrintScale(){
   }
 }
 
+function multiPageSpec(){
+  const v=$('multiPageFormat')?.value||'A4L';
+  const specs={
+    A4L:{name:'A4 paysage',w:1060,h:720,pageW:'280mm',pageH:'190mm',cssPage:'A4 landscape'},
+    A4P:{name:'A4 portrait',w:720,h:1060,pageW:'190mm',pageH:'280mm',cssPage:'A4 portrait'},
+    A3L:{name:'A3 paysage',w:1500,h:1020,pageW:'397mm',pageH:'270mm',cssPage:'A3 landscape'},
+    A3P:{name:'A3 portrait',w:1020,h:1500,pageW:'270mm',pageH:'397mm',cssPage:'A3 portrait'}
+  };
+  return specs[v]||specs.A4L;
+}
+function removePageGuides(){document.querySelectorAll('.pageGuides').forEach(x=>x.remove());}
+function drawPageGuides(){
+  removePageGuides();
+  if(!pageGuidesVisible)return;
+  const canvas=$('pedigreeCanvas');if(!canvas)return;
+  const sp=multiPageSpec(),w=Math.max(canvas.offsetWidth,parseFloat(canvas.style.width)||0),h=Math.max(canvas.offsetHeight,parseFloat(canvas.style.height)||0);
+  const g=document.createElement('div');g.className='pageGuides show';g.style.width=w+'px';g.style.height=h+'px';
+  for(let x=sp.w;x<w;x+=sp.w){const l=document.createElement('div');l.className='pageGuideV';l.style.left=x+'px';g.appendChild(l);}
+  for(let y=sp.h;y<h;y+=sp.h){const l=document.createElement('div');l.className='pageGuideH';l.style.top=y+'px';g.appendChild(l);}
+  const cols=Math.ceil(w/sp.w),rows=Math.ceil(h/sp.h);
+  for(let r=0;r<rows;r++)for(let c=0;c<cols;c++){
+    const lab=document.createElement('div');lab.className='pageGuideLabel';lab.style.left=(c*sp.w+8)+'px';lab.style.top=(r*sp.h+8)+'px';lab.textContent='Page '+(r*cols+c+1);g.appendChild(lab);
+  }
+  canvas.appendChild(g);
+}
+function buildPrintTiles(){
+  const source=$('pedigreeCanvas'),host=$('printTiles');if(!source||!host)return false;
+  const sp=multiPageSpec(),w=Math.max(source.offsetWidth,parseFloat(source.style.width)||0),h=Math.max(source.offsetHeight,parseFloat(source.style.height)||0);
+  const cols=Math.ceil(w/sp.w),rows=Math.ceil(h/sp.h);host.innerHTML='';
+  let style=$('multiPagePageStyle');if(!style){style=document.createElement('style');style.id='multiPagePageStyle';document.head.appendChild(style);}
+  style.textContent='@media print{@page{size:'+sp.cssPage+';margin:5mm}}';
+  for(let r=0;r<rows;r++)for(let c=0;c<cols;c++){
+    const tile=document.createElement('div');tile.className='printTile';tile.style.width=sp.pageW;tile.style.height=sp.pageH;
+    const inner=document.createElement('div');inner.className='printTileInner';inner.style.left=(-c*sp.w)+'px';inner.style.top=(-r*sp.h)+'px';
+    const clone=source.cloneNode(true);clone.removeAttribute('id');clone.querySelectorAll('[id]').forEach(e=>e.removeAttribute('id'));clone.querySelectorAll('.pageGuides').forEach(e=>e.remove());
+    inner.appendChild(clone);tile.appendChild(inner);host.appendChild(tile);
+  }
+  return true;
+}
+function printMultiPage(){
+  printRestoreCollapsed=new Set(collapsed);collapsed.clear();render();resetView();
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{
+    if(!buildPrintTiles())return;
+    multiPagePrinting=true;document.body.classList.add('multiPagePrinting');setTimeout(()=>window.print(),120);
+  }));
+}
+
 function printTree(full){
   printRestoreCollapsed=new Set(collapsed);
   if(full)collapsed.clear();
@@ -1909,6 +1980,7 @@ function printTree(full){
 }
 
 window.addEventListener('afterprint',()=>{
+  if(multiPagePrinting){document.body.classList.remove('multiPagePrinting');$('printTiles').innerHTML='';multiPagePrinting=false;}
   restorePrintScale();
   if(printRestoreCollapsed){
     collapsed=new Set(printRestoreCollapsed);
@@ -1986,7 +2058,7 @@ $('resetManualLayout').onclick=()=>{
   save();
 };
 
-$('btnPrintVisible').onclick=()=>printTree(false);$('btnPrintFull').onclick=()=>printTree(true);$('btnCheckTree').onclick=checkTreeIntegrity;
+$('btnPrintVisible').onclick=()=>printTree(false);$('btnPrintFull').onclick=()=>printTree(true);$('btnPrintMulti').onclick=printMultiPage;$('btnPageGuides').onclick=()=>{pageGuidesVisible=!pageGuidesVisible;$('btnPageGuides').textContent=pageGuidesVisible?'▦ Masquer les pages':'▦ Afficher les pages';drawPageGuides();};$('multiPageFormat').onchange=()=>{if(pageGuidesVisible)drawPageGuides();};$('btnCheckTree').onclick=checkTreeIntegrity;
 
 $('btnExport').onclick=()=>{const blob=new Blob([JSON.stringify({treeName:treeName(),data:data},null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=treeName().replace(/[^a-z0-9_-]+/gi,'-')+'.json';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);};
 $('fileImport').onchange=function(){const f=this.files?.[0];if(!f)return;const r=new FileReader();r.onload=()=>{try{const o=JSON.parse(r.result),d=normalizeData(o.data&&o.data.people?o.data:o);if(!d.people||!Array.isArray(d.parentLinks)||!Array.isArray(d.unions))throw 0;data=d;store.trees[store.activeTreeId].data=data;if(o.treeName)store.trees[store.activeTreeId].name=o.treeName;save();}catch(e){alert('Fichier non valide.');}};r.readAsText(f);this.value='';};
@@ -2025,6 +2097,8 @@ vp.addEventListener('wheel',e=>{e.preventDefault();const r=vp.getBoundingClientR
 window.addEventListener('resize',()=>{if($('tree')?.querySelector('.pedigreeCanvas'))fitGraphToViewport();});
 window.addEventListener('focus',()=>{if(currentUser&&Date.now()-lastLocalChangeAt>1500)syncBothWays();});
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&currentUser&&Date.now()-lastLocalChangeAt>1500)syncBothWays();});
+
+const guideObserver=new MutationObserver(()=>{if(pageGuidesVisible&&!document.querySelector('.pageGuides'))requestAnimationFrame(drawPageGuides);});guideObserver.observe($('tree'),{childList:true,subtree:false});
 
 render();resetView();refreshAuthUI();
 })();
