@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Mon arbre généalogique – V7.4.1</title>
+<title>Mon arbre généalogique – V7.4.2</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 <style>
@@ -192,7 +192,7 @@ label{font-size:12px;font-weight:700;color:#665d56}
 <!-- MOTEUR_LAYOUT: V736_TESTE_BECKER_DEMEUSE -->
 <!-- IMPRESSION: V7332_CAPTURE_FIDELE_QUADRILLAGE -->
 <!-- CORRESPONDANCES_FUSION: V740_NON_DESTRUCTIVE -->
-<!-- POINT_UNION: V741_CENTRE_GEOMETRIE_REELLE -->
+<!-- POINT_UNION: V742_CENTRE_RECTANGLES_VISUELS_EXACT -->
 <!-- DEPLACEMENT_MANUEL: V7311_CARTES_ET_PANORAMIQUE -->
 
 <style>
@@ -346,7 +346,7 @@ label{font-size:12px;font-weight:700;color:#665d56}
 <body>
 
 <header>
-  <h1>🌳 Mon arbre généalogique <small style="font-weight:500;color:#756b63">V7.4.1</small></h1>
+  <h1>🌳 Mon arbre généalogique <small style="font-weight:500;color:#756b63">V7.4.2</small></h1>
   <button class="primary" id="btnNew">+ Personne</button><button id="btnChildrenBatchTop">👨‍👩‍👧‍👦 Plusieurs enfants</button>
   <button id="btnPrintVisible">🖨️ Imprimer la branche</button>
   <button id="btnPrintFull">🖨️ Imprimer l’arbre complet</button>
@@ -1505,24 +1505,45 @@ function drawPedigreeLines(layout){
     const A=layout.pos[u.a],B=layout.pos[u.b];
     if(!A||!B||A.g!==B.g)return;
 
-    const left=A.x<=B.x?A:B,right=A.x<=B.x?B:A;
-
     if(A.unitKey===B.unitKey){
       /*
-        V7.4.1 — le point d'union est calculé sur la géométrie RÉELLEMENT
-        affichée des deux cartes, et non plus uniquement sur les constantes
-        théoriques du moteur de placement. Cela le maintient exactement au
-        centre visuel du segment, même après déplacement manuel.
+        V7.4.2 — calcul directement depuis les rectangles VISUELS dans le
+        même SVG. Cela élimine tout décalage causé par le zoom, le déplacement
+        manuel, les dimensions en mm ou une ancienne copie d'impression.
       */
-      const leftEl=document.querySelector(`.pedigreeCanvas .personCard[data-id="${CSS.escape(left.id)}"]`);
-      const rightEl=document.querySelector(`.pedigreeCanvas .personCard[data-id="${CSS.escape(right.id)}"]`);
+      const canvas=svg.closest('.pedigreeCanvas');
+      const elA=canvas?.querySelector(`.personCard[data-id="${CSS.escape(u.a)}"]`);
+      const elB=canvas?.querySelector(`.personCard[data-id="${CSS.escape(u.b)}"]`);
 
-      const lineStartX=leftEl ? leftEl.offsetLeft+leftEl.offsetWidth : left.x+PED_CARD_W;
-      const lineEndX=rightEl ? rightEl.offsetLeft : right.x;
-      const y=leftEl ? leftEl.offsetTop+leftEl.offsetHeight/2 : left.y+PED_CARD_H/2;
+      if(elA&&elB){
+        const svgRect=svg.getBoundingClientRect();
+        const aRect=elA.getBoundingClientRect();
+        const bRect=elB.getBoundingClientRect();
 
-      path(`M ${lineStartX} ${y} L ${lineEndX} ${y}`,'unionLine');
-      circle(lineStartX+(lineEndX-lineStartX)/2,y);
+        const vb=svg.viewBox.baseVal;
+        const sx=svgRect.width ? vb.width/svgRect.width : 1;
+        const sy=svgRect.height ? vb.height/svgRect.height : 1;
+
+        const aCx=(aRect.left+aRect.right)/2;
+        const bCx=(bRect.left+bRect.right)/2;
+        const leftRect=aCx<=bCx?aRect:bRect;
+        const rightRect=aCx<=bCx?bRect:aRect;
+
+        const lineStartX=(leftRect.right-svgRect.left)*sx;
+        const lineEndX=(rightRect.left-svgRect.left)*sx;
+        const y=(((leftRect.top+leftRect.bottom)/2)-svgRect.top)*sy;
+        const midX=(lineStartX+lineEndX)/2;
+
+        path(`M ${lineStartX} ${y} L ${lineEndX} ${y}`,'unionLine');
+        circle(midX,y);
+      }else{
+        const left=A.x<=B.x?A:B,right=A.x<=B.x?B:A;
+        const y=left.y+PED_CARD_H/2;
+        const lineStartX=left.x+PED_CARD_W;
+        const lineEndX=right.x;
+        path(`M ${lineStartX} ${y} L ${lineEndX} ${y}`,'unionLine');
+        circle((lineStartX+lineEndX)/2,y);
+      }
     }
   });
 
