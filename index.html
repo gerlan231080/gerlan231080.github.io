@@ -189,7 +189,7 @@ label{font-size:12px;font-weight:700;color:#665d56}
 
 </style>
 <!-- MOTEUR_LAYOUT: V736_TESTE_BECKER_DEMEUSE -->
-<!-- IMPRESSION: V7323_MOSAIQUE_ALIGNEE_GUIDES_ET_COUPURES_MINIMISEES -->
+<!-- IMPRESSION: V7328_GUIDES_CALIBRES_EDGE_ET_PLEINE_LARGEUR -->
 <!-- DEPLACEMENT_MANUEL: V7311_CARTES_ET_PANORAMIQUE -->
 
 <style>
@@ -239,7 +239,7 @@ label{font-size:12px;font-weight:700;color:#665d56}
 <!-- IMPRESSION_COULEUR: V7310 -->
 
 <style>
-/* V7.3.27 - geometrie unique ecran/impression + GSM + sexe */
+/* V7.3.28 - quadrillage calibre sur impression + liens descendants aeres */
 /*
    Une seule geometrie sert maintenant a l'ecran, au quadrillage et a l'impression.
    40 mm x 20 mm = 151,181 x 75,591 CSS px a 96 dpi.
@@ -299,11 +299,17 @@ label{font-size:12px;font-weight:700;color:#665d56}
 }
 
 </style>
+
+<style>
+/* V7.3.28 — lisibilité des liens de descendance */
+.pedigreeCanvas .descentLine{stroke-width:2.15!important;stroke-linecap:round!important;stroke-linejoin:round!important;}
+@media print{body.multiPagePrinting #printTiles .descentLine{stroke-width:2.15!important;}}
+</style>
 </head>
 <body>
 
 <header>
-  <h1>🌳 Mon arbre généalogique <small style="font-weight:500;color:#756b63">V7.3.27</small></h1>
+  <h1>🌳 Mon arbre généalogique <small style="font-weight:500;color:#756b63">V7.3.28</small></h1>
   <button class="primary" id="btnNew">+ Personne</button><button id="btnChildrenBatchTop">👨‍👩‍👧‍👦 Plusieurs enfants</button>
   <button id="btnPrintVisible">🖨️ Imprimer la branche</button>
   <button id="btnPrintFull">🖨️ Imprimer l’arbre complet</button>
@@ -1504,10 +1510,14 @@ function drawPedigreeLines(layout){
     });
 
     items.forEach(f=>{
-      const busY=Math.min(f.cy-38,f.py+38+f.lane*24);
+      // V7.3.28 : le canal est placé au milieu de l'espace entre les générations,
+      // avec un léger décalage par voie. Il n'est donc plus collé au bord des cartes.
+      const gap=Math.max(1,f.cy-f.py);
+      const base=f.py+gap*0.52;
+      const busY=Math.max(f.py+46,Math.min(f.cy-46,base+f.lane*18));
 
       // Verticale parentale jusqu'au canal propre à cette famille.
-      path(`M ${f.parentX} ${f.py} L ${f.parentX} ${busY}`,'descentLine');
+      path(`M ${f.parentX} ${f.py+3} L ${f.parentX} ${busY}`,'descentLine');
 
       // Horizontale du canal, limitée au trajet réellement nécessaire.
       const left=Math.min(f.parentX,f.minChild);
@@ -1519,7 +1529,7 @@ function drawPedigreeLines(layout){
       // Une verticale distincte par enfant.
       f.children.forEach((c,i)=>{
         const x=f.childXs[i];
-        path(`M ${x} ${busY} L ${x} ${layout.pos[c].y}`,'descentLine');
+        path(`M ${x} ${busY} L ${x} ${layout.pos[c].y-3}`,'descentLine');
       });
     });
   });
@@ -1993,11 +2003,13 @@ function multiPageSpec(){
   sp.usableWmm=sp.paperW-marginMm*2;
   sp.usableHmm=sp.paperH-marginMm*2;
 
-  // V7.3.27 : 1 CSS px conserve exactement la même géométrie partout.
-  // Les fiches sont déjà définies à 40mm x 20mm ; aucune mise à l'échelle n'est nécessaire.
-  sp.scale=1;
-  sp.w=sp.usableWmm*96/25.4;
-  sp.h=sp.usableHmm*96/25.4;
+  // V7.3.28 : calibration commune quadrillage/impression.
+  // Edge/Windows réduit légèrement les pages physiques. On compense CE facteur
+  // à la source et on applique exactement le même facteur au quadrillage.
+  // Ainsi, la zone visible entre deux pointillés est celle qui remplit la feuille.
+  sp.scale=1.12;
+  sp.w=(sp.usableWmm*96/25.4)/sp.scale;
+  sp.h=(sp.usableHmm*96/25.4)/sp.scale;
   return sp;
 }
 
@@ -2057,8 +2069,8 @@ function cleanPrintClone(source){
 }
 
 function printMultiPage(){
-  // V7.3.27 : le quadrillage visible est la référence absolue.
-  // Une page d'écran = une page physique. Aucune mise à l'échelle/recentrage secondaire.
+  // V7.3.28 : quadrillage et impression utilisent exactement la même calibration.
+  // Le facteur sp.scale compense la réduction du moteur d'impression Edge/Windows.
   printRestoreCollapsed=null;
 
   requestAnimationFrame(()=>requestAnimationFrame(()=>{
@@ -2102,7 +2114,7 @@ function printMultiPage(){
           margin:0!important;padding:0!important;overflow:hidden!important;background:#fff!important
         }
         body.multiPagePrinting #printTiles .printTileInner{
-          position:absolute!important;transform:none!important;transform-origin:0 0!important;
+          position:absolute!important;transform:scale(${sp.scale})!important;transform-origin:0 0!important;
           margin:0!important;padding:0!important
         }
         body.multiPagePrinting #printTiles .pedigreeCanvas{
@@ -2113,7 +2125,7 @@ function printMultiPage(){
         body.multiPagePrinting #printTiles .personCard{
           width:40mm!important;min-width:40mm!important;height:20mm!important;min-height:20mm!important;
           padding:1.8mm 2.8mm 1.8mm 2.6mm!important;box-sizing:border-box!important;
-          box-shadow:none!important;overflow:hidden!important;transform:none!important;zoom:1!important;
+          box-shadow:none!important;overflow:hidden!important;zoom:1!important;
           -webkit-print-color-adjust:exact!important;print-color-adjust:exact!important
         }
         body.multiPagePrinting #printTiles .personCard .surname{
@@ -2136,7 +2148,7 @@ function printMultiPage(){
         body.multiPagePrinting #printTiles .pedigreeLines,
         body.multiPagePrinting #printTiles .unionLine,
         body.multiPagePrinting #printTiles .descentLine{
-          transform:none!important;zoom:1!important;vector-effect:non-scaling-stroke!important
+          zoom:1!important;vector-effect:non-scaling-stroke!important
         }
         body.multiPagePrinting #printTiles .unionLine,
         body.multiPagePrinting #printTiles .descentLine{stroke:#8f705a!important;stroke-width:2.35!important}
@@ -2155,8 +2167,8 @@ function printMultiPage(){
         viewport.className='printViewport';
         const inner=document.createElement('div');
         inner.className='printTileInner';
-        inner.style.left=(-xCuts[c])+'px';
-        inner.style.top=(-yCuts[r])+'px';
+        inner.style.left=(-xCuts[c]*sp.scale)+'px';
+        inner.style.top=(-yCuts[r]*sp.scale)+'px';
 
         const clone=cleanPrintClone(source);
         // Force les dimensions logiques originales du canevas : aucun "fit" implicite.
