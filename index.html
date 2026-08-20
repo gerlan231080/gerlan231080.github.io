@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Mon arbre généalogique – V7.3.20</title>
+<title>Mon arbre généalogique – V7.3.21</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 :root{
@@ -239,7 +239,7 @@ label{font-size:12px;font-weight:700;color:#665d56}
 <!-- IMPRESSION_COULEUR: V7310 -->
 
 <style>
-/* V7.3.20 - GSM + symbole sexe visible en bas a droite */
+/* V7.3.21 - GSM + symbole sexe visible en bas a droite */
 .personCard{min-width:151px!important;width:151px!important;min-height:76px!important;height:76px!important;padding:7px 22px 7px 10px!important;box-sizing:border-box!important;}
 .personCard .surname,.personCard .firstname{font-size:16px!important;line-height:1.08!important;white-space:normal!important;overflow:visible!important;text-overflow:clip!important;word-break:normal!important;overflow-wrap:anywhere!important;}
 .personCard .meta{font-size:12.5px!important;line-height:1.12!important;margin-top:3px!important;}
@@ -262,7 +262,7 @@ label{font-size:12px;font-weight:700;color:#665d56}
 <body>
 
 <header>
-  <h1>🌳 Mon arbre généalogique <small style="font-weight:500;color:#756b63">V7.3.20</small></h1>
+  <h1>🌳 Mon arbre généalogique <small style="font-weight:500;color:#756b63">V7.3.21</small></h1>
   <button class="primary" id="btnNew">+ Personne</button><button id="btnChildrenBatchTop">👨‍👩‍👧‍👦 Plusieurs enfants</button>
   <button id="btnPrintVisible">🖨️ Imprimer la branche</button>
   <button id="btnPrintFull">🖨️ Imprimer l’arbre complet</button>
@@ -887,7 +887,7 @@ function card(id){
       <div class="surname">${esc(p.lastName||'')}</div>
       <div class="firstname">${esc(p.firstName||'')}</div>
       ${meta?`<div class="meta">${meta}</div>`:''}
-      ${p.phone?`<div class="phoneLine">${esc(p.phone)}</div>`:''}
+      ${p.phone?`<div class="phoneLine">GSM : ${esc(p.phone)}</div>`:''}
       ${unions>1?`<span class="unionCount">${unions} unions</span>`:''}
     </div></div>
     <span class="sexCorner" aria-hidden="true">${symbol}</span>
