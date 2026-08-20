@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Mon arbre généalogique – V7.3.25</title>
+<title>Mon arbre généalogique – V7.3.26</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 :root{
@@ -239,23 +239,53 @@ label{font-size:12px;font-weight:700;color:#665d56}
 <!-- IMPRESSION_COULEUR: V7310 -->
 
 <style>
-/* V7.3.24 - GSM + symbole sexe visible en bas a droite */
-.personCard{min-width:151px!important;width:151px!important;min-height:76px!important;height:76px!important;padding:7px 22px 7px 10px!important;box-sizing:border-box!important;}
-.personCard .surname,.personCard .firstname{font-size:16px!important;line-height:1.08!important;white-space:normal!important;overflow:visible!important;text-overflow:clip!important;word-break:normal!important;overflow-wrap:anywhere!important;}
-.personCard .meta{font-size:12.5px!important;line-height:1.12!important;margin-top:3px!important;}
-.personCard .phoneLine{font-size:12.5px!important;line-height:1.12!important;margin-top:2px!important;white-space:nowrap!important;}
-.personCard .branchToggle{right:5px!important;top:5px!important;bottom:auto!important;width:22px!important;height:22px!important;font-size:12px!important;}
+/* V7.3.26 - geometrie unique ecran/impression + GSM + sexe */
+/*
+   Une seule geometrie sert maintenant a l'ecran, au quadrillage et a l'impression.
+   40 mm x 20 mm = 151,181 x 75,591 CSS px a 96 dpi.
+   Aucun redimensionnement des fiches n'est autorise pendant l'impression mosaïque.
+*/
+.personCard{
+  min-width:40mm!important;width:40mm!important;
+  min-height:20mm!important;height:20mm!important;
+  padding:1.8mm 2.8mm 1.8mm 2.6mm!important;
+  box-sizing:border-box!important;overflow:hidden!important;
+}
+.personCard .cardTop{height:100%!important;display:block!important;}
+.personCard .cardText{height:100%!important;min-width:0!important;overflow:hidden!important;}
+.personCard .surname{
+  font-size:14px!important;line-height:1.05!important;font-weight:800!important;
+  white-space:nowrap!important;overflow:hidden!important;text-overflow:clip!important;
+  padding-right:18px!important;letter-spacing:-0.15px!important;
+}
+.personCard .firstname{
+  font-size:15px!important;line-height:1.06!important;font-weight:650!important;
+  white-space:nowrap!important;overflow:hidden!important;text-overflow:clip!important;
+  padding-right:18px!important;
+}
+.personCard .meta{font-size:11.5px!important;line-height:1.08!important;margin-top:2px!important;white-space:nowrap!important;}
+.personCard .phoneLine{font-size:11.5px!important;line-height:1.08!important;margin-top:1px!important;white-space:nowrap!important;}
+.personCard .unionCount{font-size:8px!important;margin-top:2px!important;padding:1px 4px!important;}
+.personCard .branchToggle{right:4px!important;top:4px!important;bottom:auto!important;width:19px!important;height:19px!important;padding:0!important;font-size:11px!important;}
 .personCard .cardPhoto{display:none!important;}
-.pedigreeCanvas .surname,.pedigreeCanvas .firstname{white-space:normal!important;overflow:visible!important;text-overflow:clip!important;}
+.pedigreeCanvas .surname,.pedigreeCanvas .firstname{white-space:nowrap!important;overflow:hidden!important;text-overflow:clip!important;}
+
+/* En impression standard ET mosaïque, on garde strictement la même fiche qu'à l'écran. */
 @media print{
- .personCard{width:4cm!important;min-width:4cm!important;height:2cm!important;min-height:2cm!important;padding:0.14cm 0.46cm 0.14cm 0.18cm!important;}
- .personCard .surname,.personCard .firstname{font-size:12.5pt!important;line-height:1.02!important;white-space:normal!important;overflow:visible!important;text-overflow:clip!important;overflow-wrap:anywhere!important;}
- .personCard .meta,.personCard .phoneLine{font-size:9.5pt!important;line-height:1.02!important;margin-top:0.04cm!important;}
+ .personCard{
+   min-width:40mm!important;width:40mm!important;
+   min-height:20mm!important;height:20mm!important;
+   padding:1.8mm 2.8mm 1.8mm 2.6mm!important;
+   box-shadow:none!important;overflow:hidden!important;
+ }
+ .personCard .surname{font-size:14px!important;line-height:1.05!important;white-space:nowrap!important;padding-right:18px!important;letter-spacing:-0.15px!important;}
+ .personCard .firstname{font-size:15px!important;line-height:1.06!important;white-space:nowrap!important;padding-right:18px!important;}
+ .personCard .meta,.personCard .phoneLine{font-size:11.5px!important;line-height:1.08!important;white-space:nowrap!important;}
  .personCard .branchToggle{display:none!important;}
  .personCard .cardPhoto{display:none!important;}
 }
 
-/* V7.3.24 - symbole de sexe garanti par pseudo-element */
+/* V7.3.26 - symbole de sexe garanti par pseudo-element */
 .personCard.male::after,.personCard.female::after,.personCard.other::after{
   position:absolute!important;right:7px!important;bottom:6px!important;
   font-size:18px!important;font-weight:900!important;line-height:1!important;
@@ -273,7 +303,7 @@ label{font-size:12px;font-weight:700;color:#665d56}
 <body>
 
 <header>
-  <h1>🌳 Mon arbre généalogique <small style="font-weight:500;color:#756b63">V7.3.25</small></h1>
+  <h1>🌳 Mon arbre généalogique <small style="font-weight:500;color:#756b63">V7.3.26</small></h1>
   <button class="primary" id="btnNew">+ Personne</button><button id="btnChildrenBatchTop">👨‍👩‍👧‍👦 Plusieurs enfants</button>
   <button id="btnPrintVisible">🖨️ Imprimer la branche</button>
   <button id="btnPrintFull">🖨️ Imprimer l’arbre complet</button>
@@ -906,7 +936,7 @@ function card(id){
 }
 
 
-const PED_CARD_W=190,PED_CARD_H=110,PED_INNER_GAP=24,PED_CLUSTER_GAP=80,PED_ROW_STEP=185,PED_LEFT=90,PED_TOP=70;
+const PED_CARD_W=40*96/25.4,PED_CARD_H=20*96/25.4,PED_INNER_GAP=24,PED_CLUSTER_GAP=80,PED_ROW_STEP=185,PED_LEFT=90,PED_TOP=70;
 
 function pedigreeParents(id,allowed=null){
   let parents=getParents(id).filter(p=>!allowed||allowed.has(p));
@@ -1959,29 +1989,21 @@ function multiPageSpec(){
   };
   const sp={...(specs[v]||specs.A4L)};
   const marginMm=5;
-
-  // Les fiches visibles font 151 x 76 px. On les imprime physiquement à +/- 40 x 20 mm.
-  // Le facteur est donc presque 1:1 : le quadrillage écran et les vraies feuilles coïncident.
-  const cardWpx=151,cardHpx=76;
-  const cardWmm=40,cardHmm=20;
-  sp.sx=(cardWmm*96/25.4)/cardWpx;
-  sp.sy=(cardHmm*96/25.4)/cardHpx;
   sp.marginMm=marginMm;
   sp.usableWmm=sp.paperW-marginMm*2;
   sp.usableHmm=sp.paperH-marginMm*2;
-  // Les limites de page doivent être STRICTEMENT celles du papier imprimé.
-  // On ne raccourcit donc jamais une page pour créer une marge de sécurité :
-  // la sécurité est obtenue par le placement plus compact des générations.
-  sp.bottomSafetyMm=15;
-  sp.w=(sp.usableWmm*96/25.4)/sp.sx;
-  sp.h=(sp.usableHmm*96/25.4)/sp.sy;
-  sp.bottomSafety=(sp.bottomSafetyMm*96/25.4)/sp.sy;
+
+  // V7.3.26 : 1 CSS px conserve exactement la même géométrie partout.
+  // Les fiches sont déjà définies à 40mm x 20mm ; aucune mise à l'échelle n'est nécessaire.
+  sp.scale=1;
+  sp.w=sp.usableWmm*96/25.4;
+  sp.h=sp.usableHmm*96/25.4;
   return sp;
 }
 
 function removePageGuides(){document.querySelectorAll('.pageGuides').forEach(x=>x.remove());}
 
-// V7.3.25 — pagination physique fixe.
+// V7.3.26 — pagination physique fixe.
 // Une limite affichée correspond désormais exactement au bord d'une feuille imprimée.
 function fixedCuts(total,span){
   const cuts=[0];
@@ -2073,18 +2095,16 @@ function printMultiPage(){
           position:relative!important;margin:0!important;padding:0!important;overflow:visible!important;
           background:#fff!important;transform:none!important;
         }
-        /* IMPORTANT : on neutralise ici les dimensions @media print générales.
-           Les fiches restent 151 x 76 px dans la copie puis sont mises à l'échelle
-           exactement vers 40 x 20 mm. */
+        /* V7.3.26 : copie strictement identique au rendu écran. */
         body.multiPagePrinting #printTiles .personCard{
-          width:151px!important;min-width:151px!important;height:76px!important;min-height:76px!important;
-          padding:7px 22px 7px 10px!important;box-shadow:none!important;
+          width:40mm!important;min-width:40mm!important;height:20mm!important;min-height:20mm!important;
+          padding:1.8mm 2.8mm 1.8mm 2.6mm!important;box-shadow:none!important;overflow:hidden!important;
           -webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;
         }
-        body.multiPagePrinting #printTiles .personCard .surname,
-        body.multiPagePrinting #printTiles .personCard .firstname{font-size:16px!important;line-height:1.08!important}
+        body.multiPagePrinting #printTiles .personCard .surname{font-size:14px!important;line-height:1.05!important;white-space:nowrap!important;padding-right:18px!important;letter-spacing:-0.15px!important}
+        body.multiPagePrinting #printTiles .personCard .firstname{font-size:15px!important;line-height:1.06!important;white-space:nowrap!important;padding-right:18px!important}
         body.multiPagePrinting #printTiles .personCard .meta,
-        body.multiPagePrinting #printTiles .personCard .phoneLine{font-size:12.5px!important;line-height:1.12!important;margin-top:2px!important}
+        body.multiPagePrinting #printTiles .personCard .phoneLine{font-size:11.5px!important;line-height:1.08!important;margin-top:1px!important;white-space:nowrap!important}
         body.multiPagePrinting #printTiles .personCard.male::after,
         body.multiPagePrinting #printTiles .personCard.female::after,
         body.multiPagePrinting #printTiles .personCard.other::after{right:7px!important;bottom:6px!important;font-size:18px!important}
@@ -2096,9 +2116,9 @@ function printMultiPage(){
       for(let c=0;c<cols;c++){
         const tile=document.createElement('section');tile.className='printTile';tile.dataset.page=String(r*cols+c+1);
         const inner=document.createElement('div');inner.className='printTileInner';
-        inner.style.left=(-xCuts[c]*sp.sx)+'px';
-        inner.style.top=(-yCuts[r]*sp.sy)+'px';
-        inner.style.transform=`scale(${sp.sx},${sp.sy})`;
+        inner.style.left=(-xCuts[c])+'px';
+        inner.style.top=(-yCuts[r])+'px';
+        inner.style.transform='none';
         const clone=cleanPrintClone(source);
         inner.appendChild(clone);tile.appendChild(inner);printTiles.appendChild(tile);
       }
@@ -2106,7 +2126,7 @@ function printMultiPage(){
 
     multiPagePrinting=true;
     document.body.classList.add('multiPagePrinting');
-    console.log(`Impression mosaïque V7.3.25 : ${cols} x ${rows} = ${total} pages`,plan);
+    console.log(`Impression mosaïque V7.3.26 : ${cols} x ${rows} = ${total} pages`,plan);
     setTimeout(()=>window.print(),300);
   }));
 }
