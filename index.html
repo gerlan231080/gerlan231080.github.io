@@ -148,7 +148,7 @@ label{font-size:12px;font-weight:700;color:#665d56}
 
 /* V6.8 — moteur généalogique déterministe, sans Graphviz */
 .pedigreeCanvas{position:relative;background:transparent;overflow:visible}
-.pedigreeCanvas .personCard{position:absolute!important;width:190px!important;height:110px!important;min-height:110px!important;flex:none!important;margin:0!important;box-sizing:border-box}
+.pedigreeCanvas .personCard{position:absolute!important;width:190px!important;height:95px!important;min-height:95px!important;flex:none!important;margin:0!important;box-sizing:border-box}
 .pedigreeCanvas .cardTop{height:100%}
 .pedigreeCanvas .cardText{overflow:hidden}
 .pedigreeCanvas .surname,.pedigreeCanvas .firstname{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -180,7 +180,7 @@ label{font-size:12px;font-weight:700;color:#665d56}
   body.multiPagePrinting > *:not(#printTiles){display:none!important}
   body.multiPagePrinting #printTiles{display:block!important}
   body.multiPagePrinting{background:#fff!important}
-  #printTiles .printTile{position:relative;overflow:hidden;break-after:page;page-break-after:always;background:#fff}
+  #printTiles .printTile{position:relative;overflow:hidden;break-after:page;page-break-after:always;background:#fff;display:block}
   #printTiles .printTile:last-child{break-after:auto;page-break-after:auto}
   #printTiles .printTileInner{position:absolute;left:0;top:0;transform-origin:0 0}
   #printTiles .pageGuides{display:none!important}
@@ -241,7 +241,7 @@ label{font-size:12px;font-weight:700;color:#665d56}
 <body>
 
 <header>
-  <h1>🌳 Mon arbre généalogique <small style="font-weight:500;color:#756b63">V7.3.11</small></h1>
+  <h1>🌳 Mon arbre généalogique <small style="font-weight:500;color:#756b63">V7.3.13</small></h1>
   <button class="primary" id="btnNew">+ Personne</button><button id="btnChildrenBatchTop">👨‍👩‍👧‍👦 Plusieurs enfants</button>
   <button id="btnPrintVisible">🖨️ Imprimer la branche</button>
   <button id="btnPrintFull">🖨️ Imprimer l’arbre complet</button>
@@ -875,7 +875,7 @@ function card(id){
 }
 
 
-const PED_CARD_W=190,PED_CARD_H=110,PED_INNER_GAP=26,PED_CLUSTER_GAP=90,PED_ROW_STEP=250,PED_LEFT=90,PED_TOP=70;
+const PED_CARD_W=190,PED_CARD_H=95,PED_INNER_GAP=26,PED_CLUSTER_GAP=90,PED_ROW_STEP=250,PED_LEFT=90,PED_TOP=70;
 
 function pedigreeParents(id,allowed=null){
   let parents=getParents(id).filter(p=>!allowed||allowed.has(p));
@@ -1920,13 +1920,25 @@ function restorePrintScale(){
 
 function multiPageSpec(){
   const v=$('multiPageFormat')?.value||'A4L';
+  // Impression mosaïque à taille réelle : une carte de 190 px devient 40 mm.
+  // Avec PED_CARD_H=95 px, elle mesure donc aussi exactement 20 mm de haut.
+  const MM_PER_SOURCE_PX=40/190;
+  const marginMm=5;
   const specs={
-    A4L:{name:'A4 paysage',w:1060,h:720,pageW:'280mm',pageH:'190mm',cssPage:'A4 landscape'},
-    A4P:{name:'A4 portrait',w:720,h:1060,pageW:'190mm',pageH:'280mm',cssPage:'A4 portrait'},
-    A3L:{name:'A3 paysage',w:1500,h:1020,pageW:'397mm',pageH:'270mm',cssPage:'A3 landscape'},
-    A3P:{name:'A3 portrait',w:1020,h:1500,pageW:'270mm',pageH:'397mm',cssPage:'A3 portrait'}
+    A4L:{name:'A4 paysage',paperW:297,paperH:210,cssPage:'A4 landscape'},
+    A4P:{name:'A4 portrait',paperW:210,paperH:297,cssPage:'A4 portrait'},
+    A3L:{name:'A3 paysage',paperW:420,paperH:297,cssPage:'A3 landscape'},
+    A3P:{name:'A3 portrait',paperW:297,paperH:420,cssPage:'A3 portrait'}
   };
-  return specs[v]||specs.A4L;
+  const sp=specs[v]||specs.A4L;
+  const usableW=sp.paperW-marginMm*2,usableH=sp.paperH-marginMm*2;
+  sp.marginMm=marginMm;
+  sp.pageW=usableW+'mm';
+  sp.pageH=usableH+'mm';
+  sp.w=usableW/MM_PER_SOURCE_PX; // largeur logique de l'arbre contenue sur une feuille
+  sp.h=usableH/MM_PER_SOURCE_PX; // hauteur logique de l'arbre contenue sur une feuille
+  sp.scaleMm=MM_PER_SOURCE_PX;
+  return sp;
 }
 function removePageGuides(){document.querySelectorAll('.pageGuides').forEach(x=>x.remove());}
 function drawPageGuides(){
@@ -1948,11 +1960,15 @@ function buildPrintTiles(){
   const sp=multiPageSpec(),w=Math.max(source.offsetWidth,parseFloat(source.style.width)||0),h=Math.max(source.offsetHeight,parseFloat(source.style.height)||0);
   const cols=Math.ceil(w/sp.w),rows=Math.ceil(h/sp.h);host.innerHTML='';
   let style=$('multiPagePageStyle');if(!style){style=document.createElement('style');style.id='multiPagePageStyle';document.head.appendChild(style);}
-  style.textContent='@media print{@page{size:'+sp.cssPage+';margin:5mm}}';
+  style.textContent='@media print{@page{size:'+sp.cssPage+';margin:'+sp.marginMm+'mm} body.multiPagePrinting{margin:0!important;padding:0!important} body.multiPagePrinting #printTiles{display:block!important;width:'+sp.pageW+'!important;margin:0!important;padding:0!important} body.multiPagePrinting #printTiles .printTile{width:'+sp.pageW+'!important;height:'+sp.pageH+'!important;margin:0!important;padding:0!important;overflow:hidden!important;position:relative!important;box-sizing:border-box!important;break-after:page!important;page-break-after:always!important} body.multiPagePrinting #printTiles .printTile:last-child{break-after:auto!important;page-break-after:auto!important} body.multiPagePrinting #printTiles .printTileInner{position:absolute!important;left:0!important;top:0!important;width:'+sp.pageW+'!important;height:'+sp.pageH+'!important;overflow:hidden!important} body.multiPagePrinting #printTiles .printSource{position:absolute!important;transform-origin:0 0!important}}';
   for(let r=0;r<rows;r++)for(let c=0;c<cols;c++){
-    const tile=document.createElement('div');tile.className='printTile';tile.style.width=sp.pageW;tile.style.height=sp.pageH;
-    const inner=document.createElement('div');inner.className='printTileInner';inner.style.left=(-c*sp.w)+'px';inner.style.top=(-r*sp.h)+'px';
-    const clone=source.cloneNode(true);clone.removeAttribute('id');clone.querySelectorAll('[id]').forEach(e=>e.removeAttribute('id'));clone.querySelectorAll('.pageGuides').forEach(e=>e.remove());
+    const tile=document.createElement('section');tile.className='printTile';
+    const inner=document.createElement('div');inner.className='printTileInner';
+    const clone=source.cloneNode(true);clone.removeAttribute('id');clone.classList.add('printSource');clone.querySelectorAll('[id]').forEach(e=>e.removeAttribute('id'));clone.querySelectorAll('.pageGuides').forEach(e=>e.remove());
+    // 1 px logique de l'arbre = 40/190 mm sur le papier.
+    clone.style.left=(-c*sp.w*sp.scaleMm)+'mm';
+    clone.style.top=(-r*sp.h*sp.scaleMm)+'mm';
+    clone.style.transform='scale('+(sp.scaleMm*96/25.4)+')';
     inner.appendChild(clone);tile.appendChild(inner);host.appendChild(tile);
   }
   return true;
@@ -1960,8 +1976,10 @@ function buildPrintTiles(){
 function printMultiPage(){
   printRestoreCollapsed=new Set(collapsed);collapsed.clear();render();resetView();
   requestAnimationFrame(()=>requestAnimationFrame(()=>{
-    if(!buildPrintTiles())return;
-    multiPagePrinting=true;document.body.classList.add('multiPagePrinting');setTimeout(()=>window.print(),120);
+    document.body.classList.add('multiPagePrinting');multiPagePrinting=true;
+    if(!buildPrintTiles()){document.body.classList.remove('multiPagePrinting');multiPagePrinting=false;return;}
+    // Laisse le navigateur construire toutes les pages avant l'ouverture de l'aperçu.
+    setTimeout(()=>window.print(),350);
   }));
 }
 
