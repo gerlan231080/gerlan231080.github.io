@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Mon arbre généalogique – V7.4.0</title>
+<title>Mon arbre généalogique – V7.4.1</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 <style>
@@ -192,6 +192,7 @@ label{font-size:12px;font-weight:700;color:#665d56}
 <!-- MOTEUR_LAYOUT: V736_TESTE_BECKER_DEMEUSE -->
 <!-- IMPRESSION: V7332_CAPTURE_FIDELE_QUADRILLAGE -->
 <!-- CORRESPONDANCES_FUSION: V740_NON_DESTRUCTIVE -->
+<!-- POINT_UNION: V741_CENTRE_GEOMETRIE_REELLE -->
 <!-- DEPLACEMENT_MANUEL: V7311_CARTES_ET_PANORAMIQUE -->
 
 <style>
@@ -345,7 +346,7 @@ label{font-size:12px;font-weight:700;color:#665d56}
 <body>
 
 <header>
-  <h1>🌳 Mon arbre généalogique <small style="font-weight:500;color:#756b63">V7.4.0</small></h1>
+  <h1>🌳 Mon arbre généalogique <small style="font-weight:500;color:#756b63">V7.4.1</small></h1>
   <button class="primary" id="btnNew">+ Personne</button><button id="btnChildrenBatchTop">👨‍👩‍👧‍👦 Plusieurs enfants</button>
   <button id="btnPrintVisible">🖨️ Imprimer la branche</button>
   <button id="btnPrintFull">🖨️ Imprimer l’arbre complet</button>
@@ -1505,11 +1506,23 @@ function drawPedigreeLines(layout){
     if(!A||!B||A.g!==B.g)return;
 
     const left=A.x<=B.x?A:B,right=A.x<=B.x?B:A;
-    const y=left.y+PED_CARD_H/2;
 
     if(A.unitKey===B.unitKey){
-      path(`M ${left.x+PED_CARD_W} ${y} L ${right.x} ${y}`,'unionLine');
-      circle((left.x+PED_CARD_W+right.x)/2,y);
+      /*
+        V7.4.1 — le point d'union est calculé sur la géométrie RÉELLEMENT
+        affichée des deux cartes, et non plus uniquement sur les constantes
+        théoriques du moteur de placement. Cela le maintient exactement au
+        centre visuel du segment, même après déplacement manuel.
+      */
+      const leftEl=document.querySelector(`.pedigreeCanvas .personCard[data-id="${CSS.escape(left.id)}"]`);
+      const rightEl=document.querySelector(`.pedigreeCanvas .personCard[data-id="${CSS.escape(right.id)}"]`);
+
+      const lineStartX=leftEl ? leftEl.offsetLeft+leftEl.offsetWidth : left.x+PED_CARD_W;
+      const lineEndX=rightEl ? rightEl.offsetLeft : right.x;
+      const y=leftEl ? leftEl.offsetTop+leftEl.offsetHeight/2 : left.y+PED_CARD_H/2;
+
+      path(`M ${lineStartX} ${y} L ${lineEndX} ${y}`,'unionLine');
+      circle(lineStartX+(lineEndX-lineStartX)/2,y);
     }
   });
 
