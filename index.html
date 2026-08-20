@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Mon arbre généalogique – V7.3.21</title>
+<title>Mon arbre généalogique – V7.3.22</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 :root{
@@ -239,30 +239,41 @@ label{font-size:12px;font-weight:700;color:#665d56}
 <!-- IMPRESSION_COULEUR: V7310 -->
 
 <style>
-/* V7.3.21 - GSM + symbole sexe visible en bas a droite */
+/* V7.3.22 - GSM + symbole sexe visible en bas a droite */
 .personCard{min-width:151px!important;width:151px!important;min-height:76px!important;height:76px!important;padding:7px 22px 7px 10px!important;box-sizing:border-box!important;}
 .personCard .surname,.personCard .firstname{font-size:16px!important;line-height:1.08!important;white-space:normal!important;overflow:visible!important;text-overflow:clip!important;word-break:normal!important;overflow-wrap:anywhere!important;}
 .personCard .meta{font-size:12.5px!important;line-height:1.12!important;margin-top:3px!important;}
 .personCard .phoneLine{font-size:12.5px!important;line-height:1.12!important;margin-top:2px!important;white-space:nowrap!important;}
-.personCard .sexCorner{position:absolute;right:7px;bottom:6px;font-size:17px;font-weight:800;line-height:1;color:#7a6d64;opacity:.95;pointer-events:none;z-index:7;}
 .personCard .branchToggle{right:5px!important;top:5px!important;bottom:auto!important;width:22px!important;height:22px!important;font-size:12px!important;}
-.personCard.male .sexCorner{color:#4b84bd}.personCard.female .sexCorner{color:#c95f89}
 .personCard .cardPhoto{display:none!important;}
 .pedigreeCanvas .surname,.pedigreeCanvas .firstname{white-space:normal!important;overflow:visible!important;text-overflow:clip!important;}
 @media print{
  .personCard{width:4cm!important;min-width:4cm!important;height:2cm!important;min-height:2cm!important;padding:0.14cm 0.46cm 0.14cm 0.18cm!important;}
  .personCard .surname,.personCard .firstname{font-size:12.5pt!important;line-height:1.02!important;white-space:normal!important;overflow:visible!important;text-overflow:clip!important;overflow-wrap:anywhere!important;}
  .personCard .meta,.personCard .phoneLine{font-size:9.5pt!important;line-height:1.02!important;margin-top:0.04cm!important;}
- .personCard .sexCorner{right:0.12cm;bottom:0.08cm;font-size:12pt!important;z-index:7!important;}
  .personCard .branchToggle{display:none!important;}
  .personCard .cardPhoto{display:none!important;}
 }
+
+/* V7.3.22 - symbole de sexe garanti par pseudo-element */
+.personCard.male::after,.personCard.female::after,.personCard.other::after{
+  position:absolute!important;right:7px!important;bottom:6px!important;
+  font-size:18px!important;font-weight:900!important;line-height:1!important;
+  pointer-events:none!important;z-index:50!important;background:transparent!important;
+}
+.personCard.male::after{content:"♂"!important;color:#327fc4!important;}
+.personCard.female::after{content:"♀"!important;color:#c94f83!important;}
+.personCard.other::after{content:"•"!important;color:#7a6d64!important;}
+@media print{
+ .personCard.male::after,.personCard.female::after,.personCard.other::after{right:0.12cm!important;bottom:0.08cm!important;font-size:13pt!important;}
+}
+
 </style>
 </head>
 <body>
 
 <header>
-  <h1>🌳 Mon arbre généalogique <small style="font-weight:500;color:#756b63">V7.3.21</small></h1>
+  <h1>🌳 Mon arbre généalogique <small style="font-weight:500;color:#756b63">V7.3.22</small></h1>
   <button class="primary" id="btnNew">+ Personne</button><button id="btnChildrenBatchTop">👨‍👩‍👧‍👦 Plusieurs enfants</button>
   <button id="btnPrintVisible">🖨️ Imprimer la branche</button>
   <button id="btnPrintFull">🖨️ Imprimer l’arbre complet</button>
@@ -887,10 +898,9 @@ function card(id){
       <div class="surname">${esc(p.lastName||'')}</div>
       <div class="firstname">${esc(p.firstName||'')}</div>
       ${meta?`<div class="meta">${meta}</div>`:''}
-      ${p.phone?`<div class="phoneLine">GSM : ${esc(p.phone)}</div>`:''}
+      ${(()=>{const ph=String(p.phone||'').replace(/^\s*GSM\s*:?\s*/i,'').trim();return ph?`<div class=\"phoneLine\">GSM : ${esc(ph)}</div>`:'';})()}
       ${unions>1?`<span class="unionCount">${unions} unions</span>`:''}
     </div></div>
-    <span class="sexCorner" aria-hidden="true">${symbol}</span>
     <button type="button" class="branchToggle" data-toggle="${id}" title="Replier ou déplier la descendance">${toggle}</button>
   </div>`;
 }
