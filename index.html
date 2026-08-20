@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Mon arbre généalogique – V7.3.19</title>
+<title>Mon arbre généalogique – V7.3.20</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 :root{
@@ -239,12 +239,13 @@ label{font-size:12px;font-weight:700;color:#665d56}
 <!-- IMPRESSION_COULEUR: V7310 -->
 
 <style>
-/* V7.3.19 - lisibilite + GSM + symbole sexe discret */
+/* V7.3.20 - GSM + symbole sexe visible en bas a droite */
 .personCard{min-width:151px!important;width:151px!important;min-height:76px!important;height:76px!important;padding:7px 22px 7px 10px!important;box-sizing:border-box!important;}
 .personCard .surname,.personCard .firstname{font-size:16px!important;line-height:1.08!important;white-space:normal!important;overflow:visible!important;text-overflow:clip!important;word-break:normal!important;overflow-wrap:anywhere!important;}
 .personCard .meta{font-size:12.5px!important;line-height:1.12!important;margin-top:3px!important;}
 .personCard .phoneLine{font-size:12.5px!important;line-height:1.12!important;margin-top:2px!important;white-space:nowrap!important;}
-.personCard .sexCorner{position:absolute;right:6px;bottom:5px;font-size:16px;font-weight:800;line-height:1;color:#7a6d64;opacity:.9;pointer-events:none;}
+.personCard .sexCorner{position:absolute;right:7px;bottom:6px;font-size:17px;font-weight:800;line-height:1;color:#7a6d64;opacity:.95;pointer-events:none;z-index:7;}
+.personCard .branchToggle{right:5px!important;top:5px!important;bottom:auto!important;width:22px!important;height:22px!important;font-size:12px!important;}
 .personCard.male .sexCorner{color:#4b84bd}.personCard.female .sexCorner{color:#c95f89}
 .personCard .cardPhoto{display:none!important;}
 .pedigreeCanvas .surname,.pedigreeCanvas .firstname{white-space:normal!important;overflow:visible!important;text-overflow:clip!important;}
@@ -252,7 +253,8 @@ label{font-size:12px;font-weight:700;color:#665d56}
  .personCard{width:4cm!important;min-width:4cm!important;height:2cm!important;min-height:2cm!important;padding:0.14cm 0.46cm 0.14cm 0.18cm!important;}
  .personCard .surname,.personCard .firstname{font-size:12.5pt!important;line-height:1.02!important;white-space:normal!important;overflow:visible!important;text-overflow:clip!important;overflow-wrap:anywhere!important;}
  .personCard .meta,.personCard .phoneLine{font-size:9.5pt!important;line-height:1.02!important;margin-top:0.04cm!important;}
- .personCard .sexCorner{right:0.12cm;bottom:0.08cm;font-size:12pt!important;}
+ .personCard .sexCorner{right:0.12cm;bottom:0.08cm;font-size:12pt!important;z-index:7!important;}
+ .personCard .branchToggle{display:none!important;}
  .personCard .cardPhoto{display:none!important;}
 }
 </style>
@@ -260,7 +262,7 @@ label{font-size:12px;font-weight:700;color:#665d56}
 <body>
 
 <header>
-  <h1>🌳 Mon arbre généalogique <small style="font-weight:500;color:#756b63">V7.3.19</small></h1>
+  <h1>🌳 Mon arbre généalogique <small style="font-weight:500;color:#756b63">V7.3.20</small></h1>
   <button class="primary" id="btnNew">+ Personne</button><button id="btnChildrenBatchTop">👨‍👩‍👧‍👦 Plusieurs enfants</button>
   <button id="btnPrintVisible">🖨️ Imprimer la branche</button>
   <button id="btnPrintFull">🖨️ Imprimer l’arbre complet</button>
@@ -1644,7 +1646,7 @@ function renderUnionList(id){
 }
 function openPerson(id){
   editingId=id||null;const p=id?data.people[id]:null;$('personTitle').textContent=id?'Modifier : '+nameOf(p):'Ajouter une personne';
-  $('lastName').value=p?.lastName||'';$('firstName').value=p?.firstName||'';$('birth').value=p?.birth||'';$('gender').value=p?.gender||'female';$('death').value=p?.death||'';$('notes').value=p?.notes||'';
+  $('lastName').value=p?.lastName||'';$('firstName').value=p?.firstName||'';$('birth').value=p?.birth||'';$('phone').value=p?.phone||'';$('gender').value=p?.gender||'female';$('death').value=p?.death||'';$('notes').value=p?.notes||'';
   tempPhoto=p?.photo||'';updatePhotoPreview();$('relationsBox').style.display=id?'block':'none';$('btnDelete').style.display=id?'inline-block':'none';if(id)renderUnionList(id);show($('personOverlay'));
 }
 function savePerson(){
