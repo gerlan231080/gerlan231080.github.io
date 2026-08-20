@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Mon arbre généalogique – V7.3.32</title>
+<title>Mon arbre généalogique – V7.4.0</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 <style>
@@ -191,6 +191,7 @@ label{font-size:12px;font-weight:700;color:#665d56}
 </style>
 <!-- MOTEUR_LAYOUT: V736_TESTE_BECKER_DEMEUSE -->
 <!-- IMPRESSION: V7332_CAPTURE_FIDELE_QUADRILLAGE -->
+<!-- CORRESPONDANCES_FUSION: V740_NON_DESTRUCTIVE -->
 <!-- DEPLACEMENT_MANUEL: V7311_CARTES_ET_PANORAMIQUE -->
 
 <style>
@@ -306,11 +307,45 @@ label{font-size:12px;font-weight:700;color:#665d56}
 .pedigreeCanvas .descentLine{stroke-width:2.15!important;stroke-linecap:round!important;stroke-linejoin:round!important;}
 @media print{body.multiPagePrinting #printTiles .descentLine{stroke-width:2.15!important;}}
 </style>
+
+<style>
+/* V7.4.0 — Correspondances entre arbres et fusion non destructive */
+.matchIntro{font-size:13px;line-height:1.45;color:#665d56;background:#faf6f2;border:1px solid #eaded4;border-radius:10px;padding:10px;margin-bottom:10px}
+.matchToolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+.matchToolbar .hint{flex:1;min-width:220px}
+.matchGroup{border:1px solid #dfd2c6;border-radius:12px;margin:12px 0;overflow:hidden;background:#fff}
+.matchGroupHead{padding:10px 12px;background:#f8f3ee;border-bottom:1px solid #e7dbd0;display:flex;align-items:center;gap:8px;justify-content:space-between;flex-wrap:wrap}
+.matchGroupHead strong{font-size:14px}
+.matchList{padding:8px}
+.matchRow{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:start;padding:10px;border-bottom:1px solid #eee5dd}
+.matchRow:last-child{border-bottom:0}
+.matchCheck{margin-top:5px;width:18px;height:18px}
+.matchPeople{display:grid;grid-template-columns:1fr 28px 1fr;gap:8px;align-items:center}
+.matchPerson{border:1px solid #e6d9ce;border-radius:9px;padding:8px;background:#fdfbf9;min-width:0}
+.matchPerson b{display:block;font-size:13px;word-break:break-word}
+.matchPerson small{display:block;color:#756b63;margin-top:3px;line-height:1.3}
+.matchArrow{text-align:center;font-weight:900;color:#8b6b52}
+.matchEvidence{font-size:11px;color:#665d56;margin-top:6px}
+.matchBadge{display:inline-block;border-radius:999px;padding:2px 6px;font-size:10px;font-weight:800;margin-right:4px;margin-top:3px;border:1px solid #d7c8bb;background:#f7f2ed}
+.matchBadge.high{background:#e5f5eb;border-color:#b9ddc6;color:#256443}
+.matchBadge.medium{background:#fff4d8;border-color:#ead39a;color:#795c16}
+.matchBadge.low{background:#f5ece7;border-color:#dcc9bd;color:#75594a}
+.matchActions{display:flex;flex-direction:column;gap:6px;align-items:flex-end}
+.matchEmpty{padding:24px;text-align:center;color:#756b63}
+.matchWarning{font-size:11px;color:#8b5b26;margin-top:5px}
+@media(max-width:800px){
+  .matchRow{grid-template-columns:auto 1fr}
+  .matchActions{grid-column:2;align-items:flex-start}
+  .matchPeople{grid-template-columns:1fr}
+  .matchArrow{transform:rotate(90deg)}
+}
+</style>
+
 </head>
 <body>
 
 <header>
-  <h1>🌳 Mon arbre généalogique <small style="font-weight:500;color:#756b63">V7.3.32</small></h1>
+  <h1>🌳 Mon arbre généalogique <small style="font-weight:500;color:#756b63">V7.4.0</small></h1>
   <button class="primary" id="btnNew">+ Personne</button><button id="btnChildrenBatchTop">👨‍👩‍👧‍👦 Plusieurs enfants</button>
   <button id="btnPrintVisible">🖨️ Imprimer la branche</button>
   <button id="btnPrintFull">🖨️ Imprimer l’arbre complet</button>
@@ -318,6 +353,7 @@ label{font-size:12px;font-weight:700;color:#665d56}
   <button id="btnPageGuides">▦ Afficher les pages</button>
   <button id="btnPrintMulti">🖨️ Imprimer multipages</button>
   <button id="btnCheckTree">✓ Vérifier les liens</button>
+  <button id="btnMatches">🔎 Correspondances / Fusion</button>
   <button id="btnExport">Exporter</button>
   <label class="fileBtn" for="fileImport">Importer</label><input type="file" id="fileImport" accept=".json,application/json">
 </header>
@@ -455,6 +491,31 @@ label{font-size:12px;font-weight:700;color:#665d56}
     <div class="field"><label>Date de séparation / divorce / fin</label><input id="editUnionEnd"></div>
   </div>
   <div class="modalActions"><button type="button" class="danger" id="removeUnion">Supprimer uniquement l’union</button><button type="button" id="cancelUnion">Annuler</button><button type="button" class="primary" id="saveUnion">Enregistrer</button></div>
+</div></div>
+
+
+<!-- CORRESPONDANCES ENTRE ARBRES / FUSION -->
+<div class="modalOverlay" id="matchesOverlay"><div class="modal" style="width:min(980px,100%)">
+  <div class="modalHead">
+    <strong>🔎 Correspondances entre les arbres</strong>
+    <button type="button" id="closeMatches">✕</button>
+  </div>
+  <div class="modalBody" style="display:block">
+    <div class="matchIntro">
+      L'application compare les personnes de tous les arbres sans modifier les données.
+      Elle propose des correspondances possibles d'après le nom, le prénom, les dates, le GSM
+      et, quand c'est possible, l'entourage familial. <b>La fusion n'a lieu qu'après ta validation.</b>
+      Les arbres d'origine sont toujours conservés.
+    </div>
+    <div class="matchToolbar">
+      <button type="button" id="refreshMatches">↻ Rechercher à nouveau</button>
+      <div class="hint">Coche uniquement les personnes dont tu as vérifié qu'elles représentent bien la même personne.</div>
+    </div>
+    <div id="matchesResults"></div>
+  </div>
+  <div class="modalActions">
+    <button type="button" id="closeMatchesBottom">Fermer</button>
+  </div>
 </div></div>
 
 <div id="printTiles"></div>
@@ -2027,12 +2088,97 @@ function fixedCuts(total,span){
   return cuts;
 }
 
+// V7.3.33 — coupures horizontales entre les générations.
+// La largeur des pages reste strictement fixe (donc même proportion que V7.3.32).
+// En hauteur, on autorise une page à finir un peu plus tôt afin de ne jamais
+// couper une fiche. Le blanc restant est conservé sur la feuille imprimée :
+// aucune mise à l'échelle verticale supplémentaire n'est appliquée.
+function generationBands(canvas){
+  const cards=[...canvas.querySelectorAll('.personCard')];
+  const raw=cards.map(card=>{
+    const top=card.offsetTop;
+    const bottom=top+card.offsetHeight;
+    const center=(top+bottom)/2;
+    return {top,bottom,center};
+  }).filter(b=>Number.isFinite(b.top)&&Number.isFinite(b.bottom));
+  if(!raw.length)return [];
+
+  // Regroupe les fiches placées sur une même génération (même ligne visuelle).
+  raw.sort((a,b)=>a.center-b.center);
+  const groups=[];
+  const tolerance=38;
+  for(const b of raw){
+    let g=groups[groups.length-1];
+    if(!g || Math.abs(b.center-g.center)>tolerance){
+      groups.push({top:b.top,bottom:b.bottom,center:b.center,count:1});
+    }else{
+      g.top=Math.min(g.top,b.top);
+      g.bottom=Math.max(g.bottom,b.bottom);
+      g.center=(g.center*g.count+b.center)/(g.count+1);
+      g.count++;
+    }
+  }
+  return groups;
+}
+
+function adaptiveHorizontalCuts(canvas,total,span){
+  if(!Number.isFinite(total)||!Number.isFinite(span)||span<=0)return [0,Math.max(1,total||1)];
+  const bands=generationBands(canvas);
+  if(!bands.length)return fixedCuts(total,span);
+
+  // Petite zone de sécurité au-dessus et au-dessous des fiches.
+  const safe=18;
+  const blocked=bands.map(g=>({top:Math.max(0,g.top-safe),bottom:Math.min(total,g.bottom+safe)}));
+  const cuts=[0];
+  let start=0,guard=0;
+
+  while(start+span<total-1 && guard++<200){
+    const target=start+span;
+    const minAccept=start+span*0.48;
+
+    // Cherche d'abord le dernier espace ENTRE deux générations avant la limite théorique.
+    const candidates=[];
+    for(let i=0;i<blocked.length-1;i++){
+      const gapStart=blocked[i].bottom;
+      const gapEnd=blocked[i+1].top;
+      if(gapEnd-gapStart<10)continue;
+      const mid=(gapStart+gapEnd)/2;
+      if(mid>minAccept && mid<=target)candidates.push(mid);
+    }
+
+    // Les espaces avant la première / après la dernière génération peuvent aussi convenir.
+    if(blocked[0].top>minAccept && blocked[0].top<=target)candidates.push(blocked[0].top-2);
+    const last=blocked[blocked.length-1];
+    if(last.bottom>minAccept && last.bottom<=target)candidates.push(last.bottom+2);
+
+    let cut=candidates.length?Math.max(...candidates):target;
+
+    // Sécurité absolue : si la position retenue traverse encore une fiche,
+    // remonte juste au-dessus de la génération concernée.
+    const hit=blocked.find(b=>cut>b.top && cut<b.bottom);
+    if(hit)cut=hit.top-2;
+
+    // Évite les pages anormalement petites. En dernier recours on conserve
+    // la coupure théorique, mais seulement si elle ne coupe aucune fiche.
+    if(cut<=start+40){
+      const theoreticalHit=blocked.find(b=>target>b.top && target<b.bottom);
+      cut=theoreticalHit?Math.max(start+40,theoreticalHit.top-2):target;
+    }
+
+    cut=Math.max(start+1,Math.min(total-1,cut));
+    cuts.push(cut);
+    start=cut;
+  }
+  if(cuts[cuts.length-1]<total)cuts.push(total);
+  return cuts;
+}
+
 function pageCutPlan(canvas,sp){
   const w=Math.max(canvas.offsetWidth,parseFloat(canvas.style.width)||0);
   const h=Math.max(canvas.offsetHeight,parseFloat(canvas.style.height)||0);
   return {
     xCuts:fixedCuts(w,sp.w),
-    yCuts:fixedCuts(h,sp.h),
+    yCuts:adaptiveHorizontalCuts(canvas,h,sp.h),
     w,h
   };
 }
@@ -2070,7 +2216,7 @@ function cleanPrintClone(source){
 }
 
 function printMultiPage(){
-  /* V7.3.32 — impression mosaïque par capture fidèle du rendu écran.
+  /* V7.3.33 — impression mosaïque par capture fidèle + coupures entre générations.
      Principe : le quadrillage reste la seule référence. On capture le pedigree
      en mode écran (donc sans les règles @media print), puis chaque rectangle
      entre deux pointillés est découpé pixel pour pixel et posé sur une feuille.
@@ -2193,7 +2339,7 @@ function printMultiPage(){
 
     multiPagePrinting=true;
     document.body.classList.add('multiPagePrinting');
-    console.log(`Impression mosaïque V7.3.32 (capture fidèle) : ${cols} x ${rows} = ${total} pages`,plan,sp,{captureScale});
+    console.log(`Impression mosaïque V7.3.33 (capture fidèle + coupures sûres) : ${cols} x ${rows} = ${total} pages`,plan,sp,{captureScale});
     setTimeout(()=>window.print(),450);
   }));
 }
@@ -2222,6 +2368,264 @@ window.addEventListener('afterprint',()=>{
     resetView();
   }
 });
+
+
+/* ===== V7.4.0 : correspondances entre arbres + fusion non destructive ===== */
+let matchCandidatesCache=[];
+
+function matchNorm(v){
+  return String(v||'')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+    .toLowerCase().replace(/[^a-z0-9]+/g,' ').trim().replace(/\s+/g,' ');
+}
+function matchPhone(v){return String(v||'').replace(/\D/g,'');}
+function matchDate(v){return String(v||'').trim().replace(/\s+/g,'');}
+function personLabelFromTree(t,p){
+  const bits=[];
+  if(p?.birth)bits.push('Né(e) : '+p.birth);
+  if(p?.death)bits.push('Décédé(e) : '+p.death);
+  if(p?.phone)bits.push('GSM : '+String(p.phone).replace(/^\s*GSM\s*:?\s*/i,''));
+  return {name:nameOf(p),details:bits.join(' · ')||'Aucune date/GSM'};
+}
+function treeParentsNames(d,id){
+  return (d.parentLinks||[]).filter(l=>l.child===id).map(l=>matchNorm(nameOf(d.people?.[l.parent]))).filter(Boolean);
+}
+function treePartnerNames(d,id){
+  const out=[];
+  (d.unions||[]).forEach(u=>{
+    if(u.a===id&&d.people?.[u.b])out.push(matchNorm(nameOf(d.people[u.b])));
+    if(u.b===id&&d.people?.[u.a])out.push(matchNorm(nameOf(d.people[u.a])));
+  });
+  return [...new Set(out.filter(Boolean))];
+}
+function overlapCount(a,b){
+  const B=new Set(b);let n=0;
+  [...new Set(a)].forEach(x=>{if(B.has(x))n++;});
+  return n;
+}
+function comparePeopleForMatch(treeA,pA,treeB,pB){
+  const fullA=matchNorm(nameOf(pA)),fullB=matchNorm(nameOf(pB));
+  const lastA=matchNorm(pA.lastName),lastB=matchNorm(pB.lastName);
+  const firstA=matchNorm(pA.firstName),firstB=matchNorm(pB.firstName);
+  const birthA=matchDate(pA.birth),birthB=matchDate(pB.birth);
+  const deathA=matchDate(pA.death),deathB=matchDate(pB.death);
+  const phoneA=matchPhone(pA.phone),phoneB=matchPhone(pB.phone);
+  const sameFull=!!fullA&&fullA===fullB;
+  const sameLast=!!lastA&&lastA===lastB;
+  const sameFirst=!!firstA&&firstA===firstB;
+  const sameBirth=!!birthA&&birthA===birthB;
+  const birthConflict=!!birthA&&!!birthB&&birthA!==birthB;
+  const sameDeath=!!deathA&&deathA===deathB;
+  const deathConflict=!!deathA&&!!deathB&&deathA!==deathB;
+  const samePhone=phoneA.length>=6&&phoneA===phoneB;
+  const genderConflict=!!pA.gender&&!!pB.gender&&pA.gender!=='other'&&pB.gender!=='other'&&pA.gender!==pB.gender;
+
+  const parA=treeParentsNames(treeA.data,pA.id),parB=treeParentsNames(treeB.data,pB.id);
+  const partA=treePartnerNames(treeA.data,pA.id),partB=treePartnerNames(treeB.data,pB.id);
+  const parentHits=overlapCount(parA,parB),partnerHits=overlapCount(partA,partB);
+
+  let score=0;
+  const evidence=[];
+  if(sameFull){score+=5;evidence.push('nom + prénom identiques');}
+  else{
+    if(sameLast){score+=2;evidence.push('même nom');}
+    if(sameFirst){score+=2;evidence.push('même prénom');}
+  }
+  if(sameBirth){score+=3;evidence.push('même date de naissance');}
+  if(samePhone){score+=4;evidence.push('même GSM');}
+  if(sameDeath){score+=1;evidence.push('même date de décès');}
+  if(parentHits){score+=Math.min(4,parentHits*2);evidence.push(parentHits+' parent'+(parentHits>1?'s':'')+' correspondant'+(parentHits>1?'s':''));}
+  if(partnerHits){score+=Math.min(3,partnerHits*2);evidence.push('conjoint correspondant');}
+  if(birthConflict)score-=5;
+  if(deathConflict)score-=2;
+  if(genderConflict)score-=4;
+
+  // Une proposition doit avoir au minimum une identité de nom solide,
+  // ou un GSM identique accompagné d'au moins le nom ou le prénom.
+  const eligible=(sameFull || (samePhone&&(sameLast||sameFirst))) && score>=5;
+  if(!eligible)return null;
+
+  const confidence=score>=9?'high':score>=7?'medium':'low';
+  return {score,confidence,evidence,birthConflict,deathConflict,genderConflict};
+}
+function findAllCrossTreeMatches(){
+  const trees=Object.values(store.trees);
+  const result=[];
+  for(let i=0;i<trees.length;i++){
+    for(let j=i+1;j<trees.length;j++){
+      const A=trees[i],B=trees[j];
+      const aPeople=Object.values(A.data?.people||{});
+      const bPeople=Object.values(B.data?.people||{});
+      aPeople.forEach(pa=>bPeople.forEach(pb=>{
+        const m=comparePeopleForMatch(A,pa,B,pb);
+        if(m)result.push({
+          key:A.id+'|'+B.id+'|'+pa.id+'|'+pb.id,
+          treeAId:A.id,treeBId:B.id,aPersonId:pa.id,bPersonId:pb.id,
+          ...m
+        });
+      }));
+    }
+  }
+  result.sort((x,y)=>y.score-x.score || x.key.localeCompare(y.key));
+  return result;
+}
+function confidenceText(c){return c==='high'?'Forte':c==='medium'?'Bonne':'À vérifier';}
+function renderMatches(){
+  const box=$('matchesResults');
+  if(!box)return;
+  matchCandidatesCache=findAllCrossTreeMatches();
+  if(Object.keys(store.trees).length<2){
+    box.innerHTML='<div class="matchEmpty">Il faut au moins deux arbres pour rechercher des correspondances.</div>';
+    return;
+  }
+  if(!matchCandidatesCache.length){
+    box.innerHTML='<div class="matchEmpty">Aucune correspondance suffisamment proche n’a été détectée entre les arbres.</div>';
+    return;
+  }
+
+  const groups=new Map();
+  matchCandidatesCache.forEach(c=>{
+    const k=c.treeAId+'|'+c.treeBId;
+    if(!groups.has(k))groups.set(k,[]);
+    groups.get(k).push(c);
+  });
+
+  box.innerHTML=[...groups.entries()].map(([pair,cands])=>{
+    const [aId,bId]=pair.split('|'),A=store.trees[aId],B=store.trees[bId];
+    const rows=cands.map(c=>{
+      const pa=A.data.people[c.aPersonId],pb=B.data.people[c.bPersonId];
+      const la=personLabelFromTree(A,pa),lb=personLabelFromTree(B,pb);
+      const conflicts=[
+        c.birthConflict?'dates de naissance différentes':'',
+        c.deathConflict?'dates de décès différentes':'',
+        c.genderConflict?'sexes différents':''
+      ].filter(Boolean);
+      return `<div class="matchRow">
+        <input class="matchCheck" type="checkbox" data-match-key="${esc(c.key)}" title="Je confirme qu’il s’agit de la même personne">
+        <div>
+          <div class="matchPeople">
+            <div class="matchPerson"><b>${esc(la.name)}</b><small>${esc(A.name)}<br>${esc(la.details)}</small></div>
+            <div class="matchArrow">⇄</div>
+            <div class="matchPerson"><b>${esc(lb.name)}</b><small>${esc(B.name)}<br>${esc(lb.details)}</small></div>
+          </div>
+          <div class="matchEvidence">
+            <span class="matchBadge ${c.confidence}">${confidenceText(c.confidence)} · score ${c.score}</span>
+            ${c.evidence.map(x=>`<span class="matchBadge">${esc(x)}</span>`).join('')}
+            ${conflicts.length?`<div class="matchWarning">⚠ ${esc(conflicts.join(' · '))}</div>`:''}
+          </div>
+        </div>
+        <div class="matchActions"><small>À valider manuellement</small></div>
+      </div>`;
+    }).join('');
+
+    return `<div class="matchGroup" data-pair="${esc(pair)}">
+      <div class="matchGroupHead">
+        <strong>${esc(A.name)} ⇄ ${esc(B.name)}</strong>
+        <button type="button" class="primary mergePairBtn" data-a="${esc(aId)}" data-b="${esc(bId)}">Créer un nouvel arbre fusionné</button>
+      </div>
+      <div class="matchList">${rows}</div>
+    </div>`;
+  }).join('');
+
+  box.querySelectorAll('.mergePairBtn').forEach(btn=>btn.onclick=()=>mergeValidatedPair(btn.dataset.a,btn.dataset.b));
+}
+function openMatches(){
+  renderMatches();
+  show($('matchesOverlay'));
+}
+function mergePersonFields(target,source){
+  ['lastName','firstName','birth','phone','gender','death','photo'].forEach(k=>{
+    if((target[k]===undefined||target[k]===null||String(target[k]).trim()==='') && source[k]!==undefined)target[k]=source[k];
+  });
+  const a=String(target.notes||'').trim(),b=String(source.notes||'').trim();
+  if(!a&&b)target.notes=b;
+  else if(a&&b&&a!==b&&!a.includes(b))target.notes=a+'\n\n'+b;
+}
+async function mergeValidatedPair(aId,bId){
+  const group=document.querySelector(`.matchGroup[data-pair="${CSS.escape(aId+'|'+bId)}"]`);
+  if(!group)return;
+  const selected=[...group.querySelectorAll('.matchCheck:checked')].map(x=>x.dataset.matchKey);
+  if(!selected.length){
+    alert('Coche au moins une correspondance que tu as vérifiée avant de fusionner.');
+    return;
+  }
+  const candidates=matchCandidatesCache.filter(c=>selected.includes(c.key)&&c.treeAId===aId&&c.treeBId===bId);
+  const usedA=new Set(),usedB=new Set();
+  for(const c of candidates){
+    if(usedA.has(c.aPersonId)||usedB.has(c.bPersonId)){
+      alert('Une même personne ne peut pas être associée à deux personnes différentes dans la même fusion. Décoche la correspondance en conflit.');
+      return;
+    }
+    usedA.add(c.aPersonId);usedB.add(c.bPersonId);
+  }
+
+  const A=store.trees[aId],B=store.trees[bId];
+  if(!A||!B)return;
+  const defaultName=(A.name+' + '+B.name).slice(0,120);
+  const newName=prompt('Nom du nouvel arbre fusionné :',defaultName);
+  if(!newName)return;
+  if(!confirm('Créer un NOUVEL arbre fusionné « '+newName.trim()+' » ?\n\nLes deux arbres d’origine resteront intacts.'))return;
+
+  const merged=normalizeData(JSON.parse(JSON.stringify(A.data||emptyData())));
+  merged.manualPositions={};
+
+  const mapB={};
+  candidates.forEach(c=>{
+    mapB[c.bPersonId]=c.aPersonId;
+    if(merged.people[c.aPersonId]&&B.data.people[c.bPersonId]){
+      mergePersonFields(merged.people[c.aPersonId],B.data.people[c.bPersonId]);
+    }
+  });
+
+  Object.values(B.data.people||{}).forEach(p=>{
+    if(mapB[p.id])return;
+    let nid=p.id;
+    while(merged.people[nid])nid=uid('p');
+    mapB[p.id]=nid;
+    merged.people[nid]={...JSON.parse(JSON.stringify(p)),id:nid};
+  });
+
+  (B.data.parentLinks||[]).forEach(l=>{
+    const parent=mapB[l.parent],child=mapB[l.child];
+    if(parent&&child&&parent!==child)merged.parentLinks.push({parent,child});
+  });
+  (B.data.unions||[]).forEach(u=>{
+    const a=mapB[u.a],b=mapB[u.b];
+    if(a&&b&&a!==b)merged.unions.push({...JSON.parse(JSON.stringify(u)),id:uid('u'),a,b});
+  });
+
+  merged.selectedId=candidates[0]?.aPersonId || Object.keys(merged.people)[0] || null;
+  const clean=repairGenealogyData(merged);
+  clean.manualPositions={};
+
+  const newTreeId=uid('t');
+  store.trees[newTreeId]={
+    id:newTreeId,
+    name:newName.trim(),
+    data:clean,
+    savedAt:Date.now(),
+    mergedFrom:[aId,bId],
+    validatedMatches:candidates.map(c=>({aPersonId:c.aPersonId,bPersonId:c.bPersonId}))
+  };
+  store.activeTreeId=newTreeId;
+  data=store.trees[newTreeId].data;
+  collapsed.clear();
+  persistLocal();
+  hide($('matchesOverlay'));
+  render();
+  resetView();
+
+  if(currentUser){
+    clearTimeout(saveTimer);
+    await pushAllTrees();
+  }
+  alert('Le nouvel arbre fusionné a été créé. Les arbres « '+A.name+' » et « '+B.name+' » sont conservés séparément.');
+}
+
+
+$('btnMatches').onclick=openMatches;
+$('refreshMatches').onclick=renderMatches;
+$('closeMatches').onclick=$('closeMatchesBottom').onclick=()=>hide($('matchesOverlay'));
 
 $('btnLogin').onclick=login;$('btnLogout').onclick=logout;$('btnSync').onclick=syncBothWays;
 sb.auth.onAuthStateChange((e,s)=>{currentUser=s?.user||null;setTimeout(refreshAuthUI,0);});
