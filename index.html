@@ -168,22 +168,26 @@ label{font-size:12px;font-weight:700;color:#665d56}
   outline:3px solid #6f5748!important;
 }
 
-/* V7.3.14 — repères d'impression multipages */
-.pageGuides{position:absolute;left:0;top:0;pointer-events:none;z-index:30;display:none}
-.pageGuides.show{display:block}
-.pageGuideBox{position:absolute;border:2px dashed #b45b5b;box-sizing:border-box;opacity:.78}
-.pageGuideLabel{position:absolute;font-size:12px;font-weight:800;color:#8d4545;background:rgba(255,255,255,.92);padding:3px 6px;border-radius:5px;border:1px solid #d8b0b0;z-index:2}
+/* V7.3.15 — repères + impression mosaïque fiable */
+.pageGuidesSvg{position:absolute;left:0;top:0;overflow:visible;pointer-events:none;z-index:50}
+.pageGuidesSvg .pageBoundary{fill:none;stroke:#b14f4f;stroke-width:2;stroke-dasharray:10 8;vector-effect:non-scaling-stroke;opacity:.9}
+.pageGuidesSvg .pageLabelBg{fill:rgba(255,255,255,.94);stroke:#d7aaaa;stroke-width:1;vector-effect:non-scaling-stroke}
+.pageGuidesSvg .pageLabel{font:700 13px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;fill:#8d4040}
 #printTiles{display:none}
 @media print{
   body.multiPagePrinting > *:not(#printTiles){display:none!important}
-  body.multiPagePrinting #printTiles{display:block!important}
-  body.multiPagePrinting{background:#fff!important}
-  #printTiles .printTile{position:relative;overflow:hidden;break-after:page;page-break-after:always;background:#fff;display:block}
-  #printTiles .printTile:last-child{break-after:auto;page-break-after:auto}
-  #printTiles .printTileInner{position:absolute;left:0;top:0;transform-origin:0 0}
-  #printTiles .pageGuides{display:none!important}
+  body.multiPagePrinting #printTiles{display:block!important;position:static!important;margin:0!important;padding:0!important;background:#fff!important}
+  body.multiPagePrinting{margin:0!important;padding:0!important;background:#fff!important}
+  #printTiles .printTile{display:block!important;position:relative!important;overflow:hidden!important;margin:0!important;padding:0!important;background:#fff!important;box-sizing:border-box!important;break-after:page!important;page-break-after:always!important;break-inside:avoid!important;page-break-inside:avoid!important}
+  #printTiles .printTile:last-child{break-after:auto!important;page-break-after:auto!important}
+  #printTiles .printTileInner{position:absolute!important;left:0!important;top:0!important;width:100%!important;height:100%!important;overflow:hidden!important}
+  #printTiles .printSource{position:absolute!important;left:0;top:0;transform-origin:0 0!important;max-width:none!important;max-height:none!important;overflow:visible!important}
+  #printTiles .printSource .personCard{width:190px!important;height:95px!important;min-height:95px!important;padding:7px 8px!important;box-shadow:none!important}
+  #printTiles .printSource .cardPhoto{width:40px!important;height:40px!important}
+  #printTiles .printSource .surname,#printTiles .printSource .firstname{font-size:13px!important}
+  #printTiles .printSource .meta{font-size:10px!important;line-height:1.2!important}
+  #printTiles .pageGuidesSvg{display:none!important}
 }
-
 
 </style>
 <!-- MOTEUR_LAYOUT: V736_TESTE_BECKER_DEMEUSE -->
@@ -239,7 +243,7 @@ label{font-size:12px;font-weight:700;color:#665d56}
 <body>
 
 <header>
-  <h1>🌳 Mon arbre généalogique <small style="font-weight:500;color:#756b63">V7.3.13</small></h1>
+  <h1>🌳 Mon arbre généalogique <small style="font-weight:500;color:#756b63">V7.3.15</small></h1>
   <button class="primary" id="btnNew">+ Personne</button><button id="btnChildrenBatchTop">👨‍👩‍👧‍👦 Plusieurs enfants</button>
   <button id="btnPrintVisible">🖨️ Imprimer la branche</button>
   <button id="btnPrintFull">🖨️ Imprimer l’arbre complet</button>
@@ -1938,7 +1942,7 @@ function multiPageSpec(){
   sp.scaleMm=MM_PER_SOURCE_PX;
   return sp;
 }
-function removePageGuides(){document.querySelectorAll('.pageGuides').forEach(x=>x.remove());}
+function removePageGuides(){document.querySelectorAll('.pageGuidesSvg').forEach(x=>x.remove());}
 function drawPageGuides(){
   removePageGuides();
   if(!pageGuidesVisible)return;
@@ -1947,44 +1951,58 @@ function drawPageGuides(){
   const contentW=Math.max(canvas.offsetWidth,parseFloat(canvas.style.width)||0);
   const contentH=Math.max(canvas.offsetHeight,parseFloat(canvas.style.height)||0);
   const cols=Math.max(1,Math.ceil(contentW/sp.w)),rows=Math.max(1,Math.ceil(contentH/sp.h));
-  // Le calque couvre des pages entières, même si la dernière page dépasse légèrement l'arbre.
-  const g=document.createElement('div');g.className='pageGuides show';
-  g.style.width=(cols*sp.w)+'px';g.style.height=(rows*sp.h)+'px';
+  const totalW=cols*sp.w,totalH=rows*sp.h;
+  const NS='http://www.w3.org/2000/svg';
+  const svg=document.createElementNS(NS,'svg');
+  svg.setAttribute('class','pageGuidesSvg');
+  svg.setAttribute('width',totalW);svg.setAttribute('height',totalH);
+  svg.setAttribute('viewBox',`0 0 ${totalW} ${totalH}`);
   for(let r=0;r<rows;r++)for(let c=0;c<cols;c++){
-    const box=document.createElement('div');box.className='pageGuideBox';
-    box.style.left=(c*sp.w)+'px';box.style.top=(r*sp.h)+'px';
-    box.style.width=sp.w+'px';box.style.height=sp.h+'px';g.appendChild(box);
-    const lab=document.createElement('div');lab.className='pageGuideLabel';
-    lab.style.left=(c*sp.w+8)+'px';lab.style.top=(r*sp.h+8)+'px';
-    lab.textContent='Page '+(r*cols+c+1);g.appendChild(lab);
+    const x=c*sp.w,y=r*sp.h;
+    const rect=document.createElementNS(NS,'rect');
+    rect.setAttribute('class','pageBoundary');rect.setAttribute('x',x+1);rect.setAttribute('y',y+1);
+    rect.setAttribute('width',Math.max(1,sp.w-2));rect.setAttribute('height',Math.max(1,sp.h-2));svg.appendChild(rect);
+    const bg=document.createElementNS(NS,'rect');bg.setAttribute('class','pageLabelBg');
+    bg.setAttribute('x',x+10);bg.setAttribute('y',y+10);bg.setAttribute('rx',5);bg.setAttribute('width',72);bg.setAttribute('height',24);svg.appendChild(bg);
+    const tx=document.createElementNS(NS,'text');tx.setAttribute('class','pageLabel');tx.setAttribute('x',x+18);tx.setAttribute('y',y+27);
+    tx.textContent='Page '+(r*cols+c+1);svg.appendChild(tx);
   }
-  canvas.appendChild(g);
+  canvas.appendChild(svg);
 }
 function buildPrintTiles(){
   const source=$('pedigreeCanvas'),host=$('printTiles');if(!source||!host)return false;
-  const sp=multiPageSpec(),w=Math.max(source.offsetWidth,parseFloat(source.style.width)||0),h=Math.max(source.offsetHeight,parseFloat(source.style.height)||0);
-  const cols=Math.ceil(w/sp.w),rows=Math.ceil(h/sp.h);host.innerHTML='';
+  const sp=multiPageSpec();
+  const w=Math.max(source.offsetWidth,parseFloat(source.style.width)||0),h=Math.max(source.offsetHeight,parseFloat(source.style.height)||0);
+  const cols=Math.max(1,Math.ceil(w/sp.w)),rows=Math.max(1,Math.ceil(h/sp.h));
+  host.innerHTML='';
   let style=$('multiPagePageStyle');if(!style){style=document.createElement('style');style.id='multiPagePageStyle';document.head.appendChild(style);}
-  style.textContent='@media print{@page{size:'+sp.cssPage+';margin:'+sp.marginMm+'mm} html,body{width:auto!important;height:auto!important;overflow:visible!important} body.multiPagePrinting{margin:0!important;padding:0!important} body.multiPagePrinting #printTiles{display:block!important;width:'+sp.pageW+'!important;margin:0!important;padding:0!important} body.multiPagePrinting #printTiles .printTile{display:block!important;width:'+sp.pageW+'!important;height:'+sp.pageH+'!important;margin:0!important;padding:0!important;overflow:hidden!important;position:relative!important;box-sizing:border-box!important;break-inside:avoid!important;page-break-inside:avoid!important} body.multiPagePrinting #printTiles .printTile+ .printTile{break-before:page!important;page-break-before:always!important} body.multiPagePrinting #printTiles .printTileInner{position:relative!important;left:0!important;top:0!important;width:'+sp.pageW+'!important;height:'+sp.pageH+'!important;overflow:hidden!important} body.multiPagePrinting #printTiles .printSource{position:absolute!important;transform-origin:0 0!important;max-width:none!important;max-height:none!important;break-inside:auto!important;page-break-inside:auto!important}}';
+  // Les dimensions physiques de chaque .printTile correspondent à la zone imprimable de la feuille.
+  style.textContent=`@media print{
+    @page{size:${sp.cssPage};margin:${sp.marginMm}mm}
+    html,body{width:auto!important;height:auto!important;overflow:visible!important}
+    body.multiPagePrinting #printTiles{width:${sp.pageW}!important}
+    body.multiPagePrinting #printTiles .printTile{width:${sp.pageW}!important;height:${sp.pageH}!important}
+  }`;
+  const printScale=sp.scaleMm*96/25.4; // 190 px -> 40 mm ; 95 px -> 20 mm
   for(let r=0;r<rows;r++)for(let c=0;c<cols;c++){
-    const tile=document.createElement('section');tile.className='printTile';tile.dataset.page=String(r*cols+c+1);
+    const tile=document.createElement('div');tile.className='printTile';tile.dataset.page=String(r*cols+c+1);
     const inner=document.createElement('div');inner.className='printTileInner';
-    const clone=source.cloneNode(true);clone.removeAttribute('id');clone.classList.add('printSource');clone.querySelectorAll('[id]').forEach(e=>e.removeAttribute('id'));clone.querySelectorAll('.pageGuides').forEach(e=>e.remove());
-    // 1 px logique de l'arbre = 40/190 mm sur le papier.
-    clone.style.left=(-c*sp.w*sp.scaleMm)+'mm';
-    clone.style.top=(-r*sp.h*sp.scaleMm)+'mm';
-    clone.style.transform='scale('+(sp.scaleMm*96/25.4)+')';
+    const clone=source.cloneNode(true);clone.removeAttribute('id');clone.classList.add('printSource');
+    clone.querySelectorAll('[id]').forEach(e=>e.removeAttribute('id'));clone.querySelectorAll('.pageGuidesSvg').forEach(e=>e.remove());
+    // Décale d'abord la partie voulue de l'arbre, puis applique l'échelle physique constante.
+    clone.style.transform=`translate(${-c*sp.w}px,${-r*sp.h}px) scale(${printScale})`;
     inner.appendChild(clone);tile.appendChild(inner);host.appendChild(tile);
   }
+  host.dataset.pages=String(cols*rows);
   return true;
 }
 function printMultiPage(){
-  printRestoreCollapsed=new Set(collapsed);collapsed.clear();render();resetView();
+  printRestoreCollapsed=new Set(collapsed);collapsed.clear();render();
   requestAnimationFrame(()=>requestAnimationFrame(()=>{
+    // Ne pas appeler resetView/fitGraph : cela ne doit jamais réduire le contenu destiné à l'impression.
+    if(!buildPrintTiles())return;
     document.body.classList.add('multiPagePrinting');multiPagePrinting=true;
-    if(!buildPrintTiles()){document.body.classList.remove('multiPagePrinting');multiPagePrinting=false;return;}
-    // Laisse le navigateur construire toutes les pages avant l'ouverture de l'aperçu.
-    setTimeout(()=>window.print(),700);
+    setTimeout(()=>window.print(),500);
   }));
 }
 
@@ -2121,7 +2139,7 @@ window.addEventListener('resize',()=>{if($('tree')?.querySelector('.pedigreeCanv
 window.addEventListener('focus',()=>{if(currentUser&&Date.now()-lastLocalChangeAt>1500)syncBothWays();});
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&currentUser&&Date.now()-lastLocalChangeAt>1500)syncBothWays();});
 
-const guideObserver=new MutationObserver(()=>{if(pageGuidesVisible&&!document.querySelector('.pageGuides'))requestAnimationFrame(drawPageGuides);});guideObserver.observe($('tree'),{childList:true,subtree:false});
+const guideObserver=new MutationObserver(()=>{if(pageGuidesVisible&&!document.querySelector('.pageGuidesSvg'))requestAnimationFrame(drawPageGuides);});guideObserver.observe($('tree'),{childList:true,subtree:false});
 
 render();resetView();refreshAuthUI();
 })();
